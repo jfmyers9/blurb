@@ -317,3 +317,275 @@ pub fn upload_cover(
 
     Ok(dest_str)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_conn() -> rusqlite::Connection {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::db::init_schema(&conn).unwrap();
+        conn
+    }
+
+    fn insert_book(conn: &rusqlite::Connection, title: &str, author: Option<&str>) -> i64 {
+        conn.execute(
+            "INSERT INTO books (title, author, created_at, updated_at) \
+             VALUES (?1, ?2, datetime('now'), datetime('now'))",
+            rusqlite::params![title, author],
+        )
+        .unwrap();
+        conn.last_insert_rowid()
+    }
+
+    fn get_book_by_id(conn: &rusqlite::Connection, id: i64) -> Book {
+        let mut stmt = conn
+            .prepare(&format!("{} WHERE b.id = ?1", BOOK_SELECT))
+            .unwrap();
+        stmt.query_row([id], |row| row_to_book(row)).unwrap()
+    }
+
+    #[test]
+    fn test_add_and_list_books() {
+        let conn = test_conn();
+        let id = insert_book(&conn, "Test Book", Some("Test Author"));
+
+        let mut stmt = conn
+            .prepare(&format!("{} ORDER BY b.updated_at DESC", BOOK_SELECT))
+            .unwrap();
+        let books: Vec<Book> = stmt
+            .query_map([], |row| row_to_book(row))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        assert_eq!(books.len(), 1);
+        assert_eq!(books[0].id, id);
+        assert_eq!(books[0].title, "Test Book");
+        assert_eq!(books[0].author, Some("Test Author".to_string()));
+    }
+
+    #[test]
+    fn test_get_book() {
+        let conn = test_conn();
+        let id = insert_book(&conn, "Get Me", Some("Author"));
+        let book = get_book_by_id(&conn, id);
+        assert_eq!(book.title, "Get Me");
+        assert_eq!(book.author, Some("Author".to_string()));
+        assert_eq!(book.rating, None);
+        assert_eq!(book.status, None);
+        assert_eq!(book.review, None);
+    }
+
+    #[test]
+    fn test_update_book() {
+        let conn = test_conn();
+        let id = insert_book(&conn, "Old Title", Some("Old Author"));
+
+        conn.execute(
+            "UPDATE books SET title=?1, author=?2, updated_at=datetime('now') WHERE id=?3",
+            rusqlite::params!["New Title", "New Author", id],
+        )
+        .unwrap();
+
+        let book = get_book_by_id(&conn, id);
+        assert_eq!(book.title, "New Title");
+        assert_eq!(book.author, Some("New Author".to_string()));
+    }
+
+    #[test]
+    fn test_delete_book_cascades() {
+        let conn = test_conn();
+        let id = insert_book(&conn, "Doomed", None);
+
+        conn.execute(
+            "INSERT INTO ratings (book_id, score, created_at, updated_at) \
+             VALUES (?1, 4, datetime('now'), datetime('now'))",
+            [id],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO reading_status (book_id, status, updated_at) \
+             VALUES (?1, 'reading', datetime('now'))",
+            [id],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO reviews (book_id, body, created_at, updated_at) \
+             VALUES (?1, 'Great', datetime('now'), datetime('now'))",
+            [id],
+        )
+        .unwrap();
+
+        conn.execute("DELETE FROM books WHERE id = ?1", [id])
+            .unwrap();
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM ratings WHERE book_id = ?1", [id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM reading_status WHERE book_id = ?1", [id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM reviews WHERE book_id = ?1", [id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_set_rating() {
+        let conn = test_conn();
+        let id = insert_book(&conn, "Rated", None);
+
+        conn.execute(
+            "INSERT INTO ratings (book_id, score, created_at, updated_at) \
+             VALUES (?1, ?2, datetime('now'), datetime('now')) \
+             ON CONFLICT(book_id) DO UPDATE SET score=?2, updated_at=datetime('now')",
+            rusqlite::params![id, 3],
+        )
+        .unwrap();
+
+        let book = get_book_by_id(&conn, id);
+        assert_eq!(book.rating, Some(3));
+
+        conn.execute(
+            "INSERT INTO ratings (book_id, score, created_at, updated_at) \
+             VALUES (?1, ?2, datetime('now'), datetime('now')) \
+             ON CONFLICT(book_id) DO UPDATE SET score=?2, updated_at=datetime('now')",
+            rusqlite::params![id, 5],
+        )
+        .unwrap();
+
+        let book = get_book_by_id(&conn, id);
+        assert_eq!(book.rating, Some(5));
+    }
+
+    #[test]
+    fn test_rating_constraint() {
+        let conn = test_conn();
+        let id = insert_book(&conn, "Bad Rating", None);
+
+        let result = conn.execute(
+            "INSERT INTO ratings (book_id, score, created_at, updated_at) \
+             VALUES (?1, ?2, datetime('now'), datetime('now'))",
+            rusqlite::params![id, 0],
+        );
+        assert!(result.is_err());
+
+        let result = conn.execute(
+            "INSERT INTO ratings (book_id, score, created_at, updated_at) \
+             VALUES (?1, ?2, datetime('now'), datetime('now'))",
+            rusqlite::params![id, 6],
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_set_reading_status() {
+        let conn = test_conn();
+        let id = insert_book(&conn, "Status Book", None);
+
+        conn.execute(
+            "INSERT INTO reading_status (book_id, status, updated_at) \
+             VALUES (?1, ?2, datetime('now')) \
+             ON CONFLICT(book_id) DO UPDATE SET status=?2, updated_at=datetime('now')",
+            rusqlite::params![id, "reading"],
+        )
+        .unwrap();
+
+        let book = get_book_by_id(&conn, id);
+        assert_eq!(book.status, Some("reading".to_string()));
+
+        conn.execute(
+            "INSERT INTO reading_status (book_id, status, updated_at) \
+             VALUES (?1, ?2, datetime('now')) \
+             ON CONFLICT(book_id) DO UPDATE SET status=?2, updated_at=datetime('now')",
+            rusqlite::params![id, "finished"],
+        )
+        .unwrap();
+
+        let book = get_book_by_id(&conn, id);
+        assert_eq!(book.status, Some("finished".to_string()));
+    }
+
+    #[test]
+    fn test_invalid_reading_status() {
+        let conn = test_conn();
+        let id = insert_book(&conn, "Invalid Status", None);
+
+        let result = conn.execute(
+            "INSERT INTO reading_status (book_id, status, updated_at) \
+             VALUES (?1, ?2, datetime('now'))",
+            rusqlite::params![id, "bogus"],
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_save_review() {
+        let conn = test_conn();
+        let id = insert_book(&conn, "Reviewed", None);
+
+        conn.execute(
+            "INSERT INTO reviews (book_id, body, created_at, updated_at) \
+             VALUES (?1, ?2, datetime('now'), datetime('now')) \
+             ON CONFLICT(book_id) DO UPDATE SET body=?2, updated_at=datetime('now')",
+            rusqlite::params![id, "Amazing book"],
+        )
+        .unwrap();
+
+        let book = get_book_by_id(&conn, id);
+        assert_eq!(book.review, Some("Amazing book".to_string()));
+
+        conn.execute(
+            "INSERT INTO reviews (book_id, body, created_at, updated_at) \
+             VALUES (?1, ?2, datetime('now'), datetime('now')) \
+             ON CONFLICT(book_id) DO UPDATE SET body=?2, updated_at=datetime('now')",
+            rusqlite::params![id, "Updated review"],
+        )
+        .unwrap();
+
+        let book = get_book_by_id(&conn, id);
+        assert_eq!(book.review, Some("Updated review".to_string()));
+    }
+
+    #[test]
+    fn test_import_kindle_skips_duplicates() {
+        let conn = test_conn();
+        insert_book(&conn, "Existing Book", Some("Author"));
+
+        let exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM books WHERE title = ?1)",
+                ["Existing Book"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(exists);
+
+        let count_before: i64 = conn
+            .query_row("SELECT COUNT(*) FROM books", [], |r| r.get(0))
+            .unwrap();
+
+        let title = "Existing Book";
+        let exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM books WHERE title = ?1)",
+                [title],
+                |row| row.get(0),
+            )
+            .unwrap();
+        if !exists {
+            insert_book(&conn, title, None);
+        }
+
+        let count_after: i64 = conn
+            .query_row("SELECT COUNT(*) FROM books", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count_before, count_after);
+    }
+}

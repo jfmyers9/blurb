@@ -179,6 +179,31 @@ pub async fn search_covers(query: &str) -> Result<Vec<BookMetadata>, String> {
     Ok(results)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitize_isbn_with_dashes() {
+        assert_eq!(sanitize_isbn("978-0-14-143951-8"), "9780141439518");
+    }
+
+    #[test]
+    fn sanitize_isbn_with_spaces() {
+        assert_eq!(sanitize_isbn("978 0141439518"), "9780141439518");
+    }
+
+    #[test]
+    fn sanitize_isbn_empty() {
+        assert_eq!(sanitize_isbn(""), "");
+    }
+
+    #[test]
+    fn sanitize_isbn_already_clean() {
+        assert_eq!(sanitize_isbn("9780141439518"), "9780141439518");
+    }
+}
+
 async fn google_books(isbn: &str) -> Result<BookMetadata, String> {
     let url = format!(
         "https://www.googleapis.com/books/v1/volumes?q=isbn:{}",

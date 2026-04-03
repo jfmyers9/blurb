@@ -13,7 +13,7 @@ interface ReviewPageProps {
 
 type SaveStatus = "idle" | "saving" | "saved";
 
-function parsePlainTextToDoc(text: string) {
+export function parsePlainTextToDoc(text: string) {
   const paragraphs = text.split(/\n\n+/);
   return {
     type: "doc" as const,
@@ -29,7 +29,7 @@ function parsePlainTextToDoc(text: string) {
   };
 }
 
-function parseReviewContent(review: string | null) {
+export function parseReviewContent(review: string | null) {
   if (!review) return undefined;
   try {
     const parsed = JSON.parse(review);
