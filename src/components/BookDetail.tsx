@@ -5,7 +5,6 @@ import { searchCovers, uploadCover } from "../lib/api";
 import { coverSrc } from "../lib/cover";
 import RatingStars from "./RatingStars";
 import StatusSelect from "./StatusSelect";
-import ReviewEditor from "./ReviewEditor";
 
 interface BookDetailProps {
   book: Book;
@@ -14,7 +13,7 @@ interface BookDetailProps {
   onDelete: (id: number) => Promise<void>;
   onRate: (bookId: number, score: number) => Promise<void>;
   onStatusChange: (bookId: number, status: string) => Promise<void>;
-  onReviewSave: (bookId: number, body: string) => Promise<void>;
+  onEditReview: (bookId: number) => void;
   onLookup: (bookId: number) => Promise<void>;
   onCoverChange: (bookId: number, coverUrl: string) => Promise<void>;
 }
@@ -26,7 +25,7 @@ export default function BookDetail({
   onDelete,
   onRate,
   onStatusChange,
-  onReviewSave,
+  onEditReview,
   onLookup,
   onCoverChange,
 }: BookDetailProps) {
@@ -354,11 +353,46 @@ export default function BookDetail({
           </div>
 
           {/* Review */}
-          <ReviewEditor
-            bookId={book.id}
-            review={book.review}
-            onSave={onReviewSave}
-          />
+          <div>
+            <div className="mb-1 flex items-center justify-between">
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                Review
+              </label>
+              <button
+                type="button"
+                onClick={() => onEditReview(book.id)}
+                className="rounded-md px-2 py-1 text-xs font-medium
+                  text-amber-600 hover:bg-amber-50
+                  dark:text-amber-400 dark:hover:bg-amber-900/20"
+              >
+                Edit Review
+              </button>
+            </div>
+            {book.review ? (
+              <p className="line-clamp-3 text-sm text-gray-600 dark:text-gray-400">
+                {(() => {
+                  try {
+                    const doc = JSON.parse(book.review);
+                    if (doc?.type === "doc" && Array.isArray(doc.content)) {
+                      return doc.content
+                        .map((node: { content?: { text?: string }[] }) =>
+                          node.content?.map((c) => c.text ?? "").join("") ?? ""
+                        )
+                        .filter(Boolean)
+                        .join(" ");
+                    }
+                    return book.review;
+                  } catch {
+                    return book.review;
+                  }
+                })()}
+              </p>
+            ) : (
+              <p className="text-sm text-gray-400 dark:text-gray-500 italic">
+                No review yet
+              </p>
+            )}
+          </div>
 
           {/* Metadata */}
           {(book.isbn || book.publisher || book.published_date || book.page_count) && (
