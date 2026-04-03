@@ -137,7 +137,7 @@ function App() {
           dark:border-gray-800 dark:bg-gray-900/80"
       >
         <h1 className="text-xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
-          Codex
+          Blurb
         </h1>
         <div className="flex items-center gap-2">
           <button
