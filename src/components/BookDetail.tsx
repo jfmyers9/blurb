@@ -1,5 +1,8 @@
 import { useState, useCallback } from "react";
-import type { Book } from "../lib/api";
+import { open } from "@tauri-apps/plugin-dialog";
+import type { Book, BookMetadata } from "../lib/api";
+import { searchCovers, uploadCover } from "../lib/api";
+import { coverSrc } from "../lib/cover";
 import RatingStars from "./RatingStars";
 import StatusSelect from "./StatusSelect";
 import ReviewEditor from "./ReviewEditor";
@@ -13,6 +16,7 @@ interface BookDetailProps {
   onStatusChange: (bookId: number, status: string) => Promise<void>;
   onReviewSave: (bookId: number, body: string) => Promise<void>;
   onLookup: (bookId: number) => Promise<void>;
+  onCoverChange: (bookId: number, coverUrl: string) => Promise<void>;
 }
 
 export default function BookDetail({
@@ -24,11 +28,43 @@ export default function BookDetail({
   onStatusChange,
   onReviewSave,
   onLookup,
+  onCoverChange,
 }: BookDetailProps) {
   const [title, setTitle] = useState(book.title);
   const [author, setAuthor] = useState(book.author ?? "");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [enriching, setEnriching] = useState(false);
+
+  const [showCoverMenu, setShowCoverMenu] = useState(false);
+  const [coverMode, setCoverMode] = useState<"menu" | "paste" | "search" | null>(null);
+  const [pasteUrl, setPasteUrl] = useState("");
+  const [searchQuery, setSearchQuery] = useState(`${book.title} ${book.author || ""}`.trim());
+  const [searchResults, setSearchResults] = useState<BookMetadata[]>([]);
+  const [searching, setSearching] = useState(false);
+
+  const handleCoverSearch = useCallback(async (query: string) => {
+    if (!query.trim()) return;
+    setSearching(true);
+    try {
+      const results = await searchCovers(query);
+      setSearchResults(results);
+    } finally {
+      setSearching(false);
+    }
+  }, []);
+
+  const handlePasteSubmit = useCallback(async () => {
+    if (!pasteUrl.trim()) return;
+    await onCoverChange(book.id, pasteUrl.trim());
+    setCoverMode(null);
+    setPasteUrl("");
+  }, [pasteUrl, book.id, onCoverChange]);
+
+  const handleSelectCover = useCallback(async (url: string) => {
+    await onCoverChange(book.id, url);
+    setCoverMode(null);
+    setSearchResults([]);
+  }, [book.id, onCoverChange]);
 
   const handleTitleBlur = useCallback(() => {
     if (title.trim() && title !== book.title) {
@@ -83,10 +119,14 @@ export default function BookDetail({
 
         <div className="flex-1 space-y-5 p-5">
           {/* Cover */}
-          <div className="mx-auto aspect-[2/3] w-48 overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-700">
+          <div
+            className="group relative mx-auto aspect-[2/3] w-48 overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-700"
+            onMouseEnter={() => setShowCoverMenu(true)}
+            onMouseLeave={() => { if (!coverMode) setShowCoverMenu(false); }}
+          >
             {book.cover_url ? (
               <img
-                src={book.cover_url}
+                src={coverSrc(book.cover_url)}
                 alt={book.title}
                 className="h-full w-full object-cover"
               />
@@ -101,7 +141,160 @@ export default function BookDetail({
                 </span>
               </div>
             )}
+            {/* Edit overlay */}
+            {(showCoverMenu || coverMode) && (
+              <div className="absolute inset-0 flex items-end bg-black/40">
+                {!coverMode && (
+                  <div className="flex w-full flex-col gap-1 p-2">
+                    <button
+                      type="button"
+                      onClick={() => setCoverMode("search")}
+                      className="rounded bg-white/90 px-2 py-1 text-xs font-medium text-gray-800 hover:bg-white"
+                    >
+                      Search cover
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCoverMode("paste")}
+                      className="rounded bg-white/90 px-2 py-1 text-xs font-medium text-gray-800 hover:bg-white"
+                    >
+                      Paste URL
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const file = await open({
+                          multiple: false,
+                          filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp"] }],
+                        });
+                        if (file) {
+                          await uploadCover(book.id, file);
+                          onCoverChange(book.id, file);
+                          setCoverMode(null);
+                        }
+                      }}
+                      className="rounded bg-white/90 px-2 py-1 text-xs font-medium text-gray-800 hover:bg-white"
+                    >
+                      Upload file
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
+
+          {/* Paste URL input */}
+          {coverMode === "paste" && (
+            <div className="mx-auto flex w-48 flex-col gap-2">
+              <input
+                type="url"
+                value={pasteUrl}
+                onChange={(e) => setPasteUrl(e.target.value)}
+                placeholder="https://..."
+                autoFocus
+                className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5
+                  text-xs text-gray-900 dark:border-gray-600 dark:bg-gray-800
+                  dark:text-gray-100 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                onKeyDown={(e) => { if (e.key === "Enter") handlePasteSubmit(); }}
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handlePasteSubmit}
+                  className="flex-1 rounded-md bg-amber-600 px-2 py-1 text-xs font-medium text-white hover:bg-amber-700"
+                >
+                  Apply
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setCoverMode(null); setPasteUrl(""); }}
+                  className="flex-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-medium
+                    text-gray-600 hover:bg-gray-50 dark:border-gray-600
+                    dark:text-gray-400 dark:hover:bg-gray-800"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Search cover */}
+          {coverMode === "search" && (
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  autoFocus
+                  className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-2 py-1.5
+                    text-xs text-gray-900 dark:border-gray-600 dark:bg-gray-800
+                    dark:text-gray-100 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  onKeyDown={(e) => { if (e.key === "Enter") handleCoverSearch(searchQuery); }}
+                />
+                <button
+                  type="button"
+                  onClick={() => handleCoverSearch(searchQuery)}
+                  disabled={searching}
+                  className="rounded-md bg-amber-600 px-3 py-1 text-xs font-medium text-white
+                    hover:bg-amber-700 disabled:opacity-50"
+                >
+                  {searching ? "..." : "Search"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setCoverMode(null); setSearchResults([]); }}
+                  className="rounded-md border border-gray-300 px-2 py-1 text-xs font-medium
+                    text-gray-600 hover:bg-gray-50 dark:border-gray-600
+                    dark:text-gray-400 dark:hover:bg-gray-800"
+                >
+                  Cancel
+                </button>
+              </div>
+              {searching && (
+                <p className="text-center text-xs text-gray-500">Searching...</p>
+              )}
+              {searchResults.length > 0 && (
+                <div className="grid grid-cols-3 gap-2">
+                  {searchResults.map((result, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => result.cover_url && handleSelectCover(result.cover_url)}
+                      disabled={!result.cover_url}
+                      className="group/thumb flex flex-col gap-1 rounded-md border border-gray-200
+                        p-1 text-left hover:border-amber-400 hover:bg-amber-50
+                        dark:border-gray-700 dark:hover:border-amber-600
+                        dark:hover:bg-amber-900/20 disabled:opacity-40"
+                    >
+                      {result.cover_url ? (
+                        <img
+                          src={result.cover_url}
+                          alt={result.title ?? ""}
+                          className="aspect-[2/3] w-full rounded object-cover"
+                        />
+                      ) : (
+                        <div className="flex aspect-[2/3] w-full items-center justify-center rounded bg-gray-100 dark:bg-gray-700">
+                          <span className="text-xs text-gray-400">No img</span>
+                        </div>
+                      )}
+                      <span className="line-clamp-2 text-[10px] leading-tight text-gray-700 dark:text-gray-300">
+                        {result.title}
+                      </span>
+                      {result.author && (
+                        <span className="line-clamp-1 text-[10px] leading-tight text-gray-500 dark:text-gray-400">
+                          {result.author}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {!searching && searchResults.length === 0 && searchQuery && (
+                <p className="text-center text-xs text-gray-400">Press Search to find covers</p>
+              )}
+            </div>
+          )}
 
           {/* Title */}
           <div>

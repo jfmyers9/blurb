@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { lookupIsbn } from "../lib/api";
+import { lookupIsbn, searchCovers } from "../lib/api";
 import type { BookMetadata } from "../lib/api";
 
 interface AddBookData {
@@ -27,6 +27,9 @@ export default function AddBookForm({ open, onClose, onAdd }: AddBookFormProps) 
   const [submitting, setSubmitting] = useState(false);
   const [lookingUp, setLookingUp] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
+  const [coverUrl, setCoverUrl] = useState("");
+  const [coverResults, setCoverResults] = useState<BookMetadata[]>([]);
+  const [searchingCovers, setSearchingCovers] = useState(false);
 
   if (!open) return null;
 
@@ -55,7 +58,7 @@ export default function AddBookForm({ open, onClose, onAdd }: AddBookFormProps) 
         title: title.trim(),
         author: author.trim(),
         isbn: isbn.trim(),
-        cover_url: metadata?.cover_url,
+        cover_url: coverUrl.trim() || metadata?.cover_url,
         description: metadata?.description,
         publisher: metadata?.publisher,
         published_date: metadata?.published_date,
@@ -66,6 +69,8 @@ export default function AddBookForm({ open, onClose, onAdd }: AddBookFormProps) 
       setIsbn("");
       setMetadata(null);
       setLookupError(null);
+      setCoverUrl("");
+      setCoverResults([]);
       onClose();
     } finally {
       setSubmitting(false);
@@ -122,13 +127,83 @@ export default function AddBookForm({ open, onClose, onAdd }: AddBookFormProps) 
             )}
           </div>
 
-          {metadata?.cover_url && (
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Cover URL
+            </label>
+            <input
+              type="url"
+              value={coverUrl}
+              onChange={(e) => setCoverUrl(e.target.value)}
+              placeholder="https://example.com/cover.jpg"
+              className="w-full rounded-md border border-gray-300 bg-white px-3
+                py-2 text-sm text-gray-900 dark:border-gray-600
+                dark:bg-gray-700 dark:text-gray-100 focus:ring-2
+                focus:ring-amber-500 focus:outline-none"
+            />
+          </div>
+
+          {(coverUrl.trim() || metadata?.cover_url) && (
             <div className="flex justify-center">
               <img
-                src={metadata.cover_url}
+                src={coverUrl.trim() || metadata?.cover_url || ""}
                 alt="Cover preview"
                 className="h-32 rounded-md shadow-sm object-contain"
               />
+            </div>
+          )}
+
+          {title.trim() && (
+            <div>
+              <button
+                type="button"
+                onClick={async () => {
+                  const query = `${title} ${author}`.trim();
+                  setSearchingCovers(true);
+                  setCoverResults([]);
+                  try {
+                    const results = await searchCovers(query);
+                    setCoverResults(results);
+                  } finally {
+                    setSearchingCovers(false);
+                  }
+                }}
+                disabled={searchingCovers}
+                className="rounded-md bg-gray-100 px-3 py-2 text-sm font-medium
+                  text-gray-700 hover:bg-gray-200 disabled:opacity-50
+                  disabled:cursor-not-allowed dark:bg-gray-600
+                  dark:text-gray-200 dark:hover:bg-gray-500"
+              >
+                {searchingCovers ? "Searching..." : "Find cover"}
+              </button>
+              {coverResults.length > 0 && (
+                <div className="mt-2 grid grid-cols-4 gap-2">
+                  {coverResults.map((result, i) =>
+                    result.cover_url ? (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => {
+                          setCoverUrl(result.cover_url!);
+                          setCoverResults([]);
+                        }}
+                        className={`overflow-hidden rounded-md border-2 p-0.5
+                          hover:border-amber-500 transition-colors ${
+                            coverUrl === result.cover_url
+                              ? "border-amber-500"
+                              : "border-gray-200 dark:border-gray-600"
+                          }`}
+                      >
+                        <img
+                          src={result.cover_url}
+                          alt={result.title || "Cover option"}
+                          className="h-20 w-full object-contain"
+                        />
+                      </button>
+                    ) : null
+                  )}
+                </div>
+              )}
             </div>
           )}
 

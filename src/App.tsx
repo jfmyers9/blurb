@@ -108,6 +108,25 @@ function App() {
     // Don't update selectedBook here to avoid resetting the textarea
   };
 
+  const handleCoverChange = async (bookId: number, coverUrl: string) => {
+    const book = books.find((b) => b.id === bookId);
+    if (!book) return;
+    await updateBook({
+      id: bookId,
+      title: book.title,
+      author: book.author,
+      isbn: book.isbn,
+      asin: book.asin,
+      cover_url: coverUrl,
+      description: book.description,
+      publisher: book.publisher,
+      published_date: book.published_date,
+      page_count: book.page_count,
+    });
+    const data = await refreshAndSync();
+    setSelectedBook(data.find((b) => b.id === bookId) ?? null);
+  };
+
   const handleLookup = async (bookId: number) => {
     const book = books.find((b) => b.id === bookId);
     if (!book?.isbn) return;
@@ -187,6 +206,7 @@ function App() {
           onStatusChange={handleStatusChange}
           onReviewSave={handleReviewSave}
           onLookup={handleLookup}
+          onCoverChange={handleCoverChange}
         />
       )}
 

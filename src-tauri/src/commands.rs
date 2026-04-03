@@ -2,6 +2,9 @@ use crate::kindle::KindleBook;
 use crate::metadata::BookMetadata;
 use crate::models::Book;
 use crate::AppState;
+use std::fs;
+use std::path::Path;
+use tauri::Manager;
 use tauri::State;
 
 const BOOK_SELECT: &str = "SELECT b.id, b.title, b.author, b.isbn, b.asin, \
@@ -133,10 +136,33 @@ pub fn update_book(
 }
 
 #[tauri::command]
-pub fn delete_book(state: State<AppState>, id: i64) -> Result<(), String> {
+pub fn delete_book(
+    app_handle: tauri::AppHandle,
+    state: State<AppState>,
+    id: i64,
+) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.execute("DELETE FROM books WHERE id = ?1", [id])
         .map_err(|e| e.to_string())?;
+
+    // Clean up cover files
+    let covers_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("covers");
+    if covers_dir.exists() {
+        if let Ok(entries) = fs::read_dir(&covers_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+                if name_str.starts_with(&format!("{}.", id)) {
+                    let _ = fs::remove_file(entry.path());
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -186,6 +212,11 @@ pub fn save_review(state: State<AppState>, book_id: i64, body: String) -> Result
 #[tauri::command]
 pub async fn lookup_isbn(isbn: String) -> Result<BookMetadata, String> {
     crate::metadata::lookup(&isbn).await
+}
+
+#[tauri::command]
+pub async fn search_covers(query: String) -> Result<Vec<BookMetadata>, String> {
+    crate::metadata::search_covers(&query).await
 }
 
 #[tauri::command]
@@ -240,4 +271,49 @@ pub fn import_kindle_books(
     }
 
     Ok(ids)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn upload_cover(
+    app_handle: tauri::AppHandle,
+    state: State<AppState>,
+    book_id: i64,
+    source_path: String,
+) -> Result<String, String> {
+    let source = Path::new(&source_path);
+    let ext = source
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("jpg");
+
+    let covers_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("covers");
+    fs::create_dir_all(&covers_dir).map_err(|e| e.to_string())?;
+
+    // Remove any existing cover for this book
+    if let Ok(entries) = fs::read_dir(&covers_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if name_str.starts_with(&format!("{}.", book_id)) {
+                let _ = fs::remove_file(entry.path());
+            }
+        }
+    }
+
+    let dest = covers_dir.join(format!("{}.{}", book_id, ext));
+    fs::copy(source, &dest).map_err(|e| e.to_string())?;
+
+    let dest_str = dest.to_string_lossy().to_string();
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.execute(
+        "UPDATE books SET cover_url = ?1, updated_at = datetime('now') WHERE id = ?2",
+        rusqlite::params![dest_str, book_id],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(dest_str)
 }

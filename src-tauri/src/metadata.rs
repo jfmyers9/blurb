@@ -130,6 +130,55 @@ struct GoogleImageLinks {
     thumbnail: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct OLSearchResponse {
+    docs: Option<Vec<OLSearchDoc>>,
+}
+
+#[derive(Deserialize)]
+struct OLSearchDoc {
+    title: Option<String>,
+    author_name: Option<Vec<String>>,
+    cover_i: Option<i64>,
+    #[allow(dead_code)]
+    isbn: Option<Vec<String>>,
+}
+
+pub async fn search_covers(query: &str) -> Result<Vec<BookMetadata>, String> {
+    let client = reqwest::Client::new();
+    let url = format!(
+        "https://openlibrary.org/search.json?q={}&fields=title,author_name,cover_i,isbn&limit=5",
+        urlencoding::encode(query)
+    );
+    let resp: OLSearchResponse = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let results = resp
+        .docs
+        .unwrap_or_default()
+        .into_iter()
+        .map(|doc| BookMetadata {
+            title: doc.title,
+            author: doc.author_name.as_ref().and_then(|a| a.first().cloned()),
+            cover_url: doc
+                .cover_i
+                .map(|id| format!("https://covers.openlibrary.org/b/id/{}-L.jpg", id)),
+            description: None,
+            publisher: None,
+            published_date: None,
+            page_count: None,
+        })
+        .collect();
+
+    Ok(results)
+}
+
 async fn google_books(isbn: &str) -> Result<BookMetadata, String> {
     let url = format!(
         "https://www.googleapis.com/books/v1/volumes?q=isbn:{}",

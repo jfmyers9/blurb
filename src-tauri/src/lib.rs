@@ -15,6 +15,7 @@ pub struct AppState {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let conn = db::init_db(app.handle())?;
             app.manage(AppState {
@@ -32,9 +33,11 @@ pub fn run() {
             commands::set_reading_status,
             commands::save_review,
             commands::lookup_isbn,
+            commands::search_covers,
             commands::detect_kindle,
             commands::list_kindle_books,
             commands::import_kindle_books,
+            commands::upload_cover,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

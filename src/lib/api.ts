@@ -114,6 +114,10 @@ export async function lookupIsbn(isbn: string): Promise<BookMetadata> {
   return invoke<BookMetadata>("lookup_isbn", { isbn });
 }
 
+export async function searchCovers(query: string): Promise<BookMetadata[]> {
+  return invoke<BookMetadata[]>("search_covers", { query });
+}
+
 export async function saveReview(
   book_id: number,
   body: string
@@ -144,4 +148,11 @@ export async function importKindleBooks(
   books: KindleBook[]
 ): Promise<number[]> {
   return invoke<number[]>("import_kindle_books", { books });
+}
+
+export async function uploadCover(
+  book_id: number,
+  source_path: string
+): Promise<string> {
+  return invoke<string>("upload_cover", { book_id, source_path });
 }

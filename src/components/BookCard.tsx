@@ -1,4 +1,5 @@
 import type { Book } from "../lib/api";
+import { coverSrc } from "../lib/cover";
 import RatingStars from "./RatingStars";
 import { getStatusInfo } from "./StatusSelect";
 
@@ -23,7 +24,7 @@ export default function BookCard({ book, onClick }: BookCardProps) {
       <div className="relative aspect-[2/3] w-full overflow-hidden bg-gray-100 dark:bg-gray-700">
         {book.cover_url ? (
           <img
-            src={book.cover_url}
+            src={coverSrc(book.cover_url)}
             alt={book.title}
             className="h-full w-full object-cover transition group-hover:scale-105"
           />
