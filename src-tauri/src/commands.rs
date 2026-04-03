@@ -33,7 +33,7 @@ fn row_to_book(row: &rusqlite::Row) -> rusqlite::Result<Book> {
     })
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn add_book(
     state: State<AppState>,
     title: String,
@@ -91,7 +91,7 @@ pub fn get_book(state: State<AppState>, id: i64) -> Result<Book, String> {
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn update_book(
     state: State<AppState>,
     id: i64,
@@ -140,7 +140,7 @@ pub fn delete_book(state: State<AppState>, id: i64) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn set_rating(state: State<AppState>, book_id: i64, score: i32) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.execute(
@@ -153,7 +153,7 @@ pub fn set_rating(state: State<AppState>, book_id: i64, score: i32) -> Result<()
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn set_reading_status(
     state: State<AppState>,
     book_id: i64,
@@ -170,7 +170,7 @@ pub fn set_reading_status(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn save_review(state: State<AppState>, book_id: i64, body: String) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.execute(
@@ -193,7 +193,7 @@ pub fn detect_kindle() -> Result<Option<String>, String> {
     Ok(crate::kindle::detect_kindle())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn list_kindle_books(mount_path: String) -> Result<Vec<KindleBook>, String> {
     Ok(crate::kindle::list_kindle_books(&mount_path))
 }

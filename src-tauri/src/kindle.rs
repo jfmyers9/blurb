@@ -74,6 +74,9 @@ pub fn list_kindle_books(mount_path: &str) -> Vec<KindleBook> {
     books
 }
 
+const SKIP_DIRS: &[&str] = &[".sdr", ".tmp"];
+const MIN_BOOK_SIZE: u64 = 10_000; // 10KB — skip metadata stubs
+
 fn scan_dir(dir: &Path, books: &mut Vec<KindleBook>) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
@@ -82,6 +85,14 @@ fn scan_dir(dir: &Path, books: &mut Vec<KindleBook>) {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
+            let dir_name = path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_lowercase();
+            if SKIP_DIRS.iter().any(|s| dir_name.ends_with(s)) {
+                continue;
+            }
             scan_dir(&path, books);
             continue;
         }
@@ -93,6 +104,11 @@ fn scan_dir(dir: &Path, books: &mut Vec<KindleBook>) {
             .unwrap_or_default();
 
         if !KINDLE_EXTENSIONS.contains(&ext.as_str()) {
+            continue;
+        }
+
+        let size_bytes = entry.metadata().map(|m| m.len()).unwrap_or(0);
+        if size_bytes < MIN_BOOK_SIZE {
             continue;
         }
 
@@ -108,16 +124,12 @@ fn scan_dir(dir: &Path, books: &mut Vec<KindleBook>) {
             .to_string_lossy()
             .to_string();
 
-        let (title, author) = if let Some(idx) = stem.find(" - ") {
-            (
-                stem[..idx].to_string(),
-                Some(stem[idx + 3..].to_string()),
-            )
-        } else {
-            (stem, None)
-        };
+        // Skip files that look like Amazon internal IDs (e.g. "CR!XXXX", "GutenbergXXX")
+        if stem.starts_with("CR!") || stem.starts_with('.') {
+            continue;
+        }
 
-        let size_bytes = entry.metadata().map(|m| m.len()).unwrap_or(0);
+        let (title, author) = parse_kindle_filename(&stem);
 
         books.push(KindleBook {
             filename,
@@ -128,4 +140,45 @@ fn scan_dir(dir: &Path, books: &mut Vec<KindleBook>) {
             size_bytes,
         });
     }
+}
+
+fn strip_asin_suffix(name: &str) -> &str {
+    // Amazon appends ASINs like "_B0XXXXXXXXX" or " (B0XXXXXXXXX)"
+    // ASINs are 10 chars starting with B0
+    if let Some(idx) = name.rfind("_B0") {
+        let suffix = &name[idx + 1..];
+        if suffix.len() >= 10 && suffix[..10].chars().all(|c| c.is_ascii_alphanumeric()) {
+            return name[..idx].trim();
+        }
+    }
+    if let Some(idx) = name.rfind(" (B0") {
+        if name.ends_with(')') {
+            return name[..idx].trim();
+        }
+    }
+    // Also strip trailing _EBOK, _PDOC, etc.
+    for tag in &["_EBOK", "_PDOC", "_EBSP"] {
+        if let Some(stripped) = name.strip_suffix(tag) {
+            return stripped.trim();
+        }
+    }
+    name
+}
+
+fn parse_kindle_filename(stem: &str) -> (String, Option<String>) {
+    let stem = strip_asin_suffix(stem);
+
+    // Pattern: "Title - Author"
+    if let Some(idx) = stem.find(" - ") {
+        let title = strip_asin_suffix(stem[..idx].trim()).to_string();
+        let author = strip_asin_suffix(stem[idx + 3..].trim()).to_string();
+        if !author.is_empty() {
+            return (title, Some(author));
+        }
+        return (title, None);
+    }
+
+    // Replace underscores with spaces for readability
+    let cleaned = stem.replace('_', " ");
+    (cleaned.trim().to_string(), None)
 }
