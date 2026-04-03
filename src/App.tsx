@@ -7,7 +7,6 @@ import {
   deleteBook,
   setRating,
   setReadingStatus,
-  saveReview,
   lookupIsbn,
 } from "./lib/api";
 import type { Book } from "./lib/api";
@@ -15,12 +14,14 @@ import LibraryGrid from "./components/LibraryGrid";
 import BookDetail from "./components/BookDetail";
 import AddBookForm from "./components/AddBookForm";
 import KindleSync from "./components/KindleSync";
+import ReviewPage from "./components/ReviewPage";
 
 function App() {
   const [books, setBooks] = useState<Book[]>([]);
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [showKindle, setShowKindle] = useState(false);
+  const [editingReviewBookId, setEditingReviewBookId] = useState<number | null>(null);
 
   const refresh = useCallback(async () => {
     const data = await listBooks();
@@ -100,12 +101,6 @@ function App() {
     await setReadingStatus(bookId, status);
     const data = await refreshAndSync();
     setSelectedBook(data.find((b) => b.id === bookId) ?? null);
-  };
-
-  const handleReviewSave = async (bookId: number, body: string) => {
-    await saveReview(bookId, body);
-    await refreshAndSync();
-    // Don't update selectedBook here to avoid resetting the textarea
   };
 
   const handleCoverChange = async (bookId: number, coverUrl: string) => {
@@ -204,9 +199,21 @@ function App() {
           onDelete={handleDelete}
           onRate={handleRate}
           onStatusChange={handleStatusChange}
-          onReviewSave={handleReviewSave}
+          onEditReview={(bookId) => setEditingReviewBookId(bookId)}
           onLookup={handleLookup}
           onCoverChange={handleCoverChange}
+        />
+      )}
+
+      {/* Review overlay */}
+      {editingReviewBookId !== null && (
+        <ReviewPage
+          bookId={editingReviewBookId}
+          onClose={() => setEditingReviewBookId(null)}
+          onSave={async () => {
+            const data = await refreshAndSync();
+            setSelectedBook(data.find((b) => b.id === editingReviewBookId) ?? null);
+          }}
         />
       )}
 
