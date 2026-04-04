@@ -2,45 +2,63 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import Placeholder from "@tiptap/extension-placeholder";
 import { sharedExtensions } from "../lib/editorExtensions";
-import { getBook, saveReview, type Book } from "../lib/api";
-import { coverSrc } from "../lib/cover";
-import { parseReviewContent } from "../lib/reviewParser";
+import {
+  createDiaryEntry,
+  updateDiaryEntry,
+  type DiaryEntry,
+} from "../lib/api";
+import RatingStars from "./RatingStars";
 
-interface ReviewPageProps {
+interface DiaryEntryFormProps {
   bookId: number;
+  entry?: DiaryEntry;
+  onSave: () => void;
   onClose: () => void;
-  onSave?: () => void;
 }
 
 type SaveStatus = "idle" | "saving" | "saved";
 
-export default function ReviewPage({ bookId, onClose, onSave }: ReviewPageProps) {
-  const [book, setBook] = useState<Book | null>(null);
+function todayString() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export default function DiaryEntryForm({
+  bookId,
+  entry,
+  onSave,
+  onClose,
+}: DiaryEntryFormProps) {
+  const [entryDate, setEntryDate] = useState(entry?.entry_date ?? todayString());
+  const [rating, setRating] = useState<number | null>(entry?.rating ?? null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [entryId, setEntryId] = useState<number | null>(entry?.id ?? null);
+
   const dirtyRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const editorContentRef = useRef<string | null>(null);
+  const editorContentRef = useRef<string | null>(entry?.body ?? null);
+  const ratingRef = useRef<number | null>(rating);
+  const entryDateRef = useRef(entryDate);
+  const entryIdRef = useRef<number | null>(entryId);
 
-  useEffect(() => {
-    const backup = localStorage.getItem(`review-backup-${bookId}`);
-    if (backup) {
-      saveReview(bookId, backup).then(() => {
-        localStorage.removeItem(`review-backup-${bookId}`);
-      });
-    }
-    getBook(bookId).then(setBook);
-  }, [bookId]);
+  ratingRef.current = rating;
+  entryDateRef.current = entryDate;
+  entryIdRef.current = entryId;
 
   const doSave = useCallback(
-    async (json: string) => {
+    async (body: string | null) => {
       setSaveStatus("saving");
       try {
-        await saveReview(bookId, json);
+        if (entryIdRef.current != null) {
+          await updateDiaryEntry(entryIdRef.current, body, ratingRef.current, entryDateRef.current);
+        } else {
+          const created = await createDiaryEntry(bookId, body, ratingRef.current, entryDateRef.current);
+          setEntryId(created.id);
+          entryIdRef.current = created.id;
+        }
         dirtyRef.current = false;
-        localStorage.removeItem(`review-backup-${bookId}`);
         setSaveStatus("saved");
-        onSave?.();
+        onSave();
         savedTimerRef.current = setTimeout(() => setSaveStatus("idle"), 1500);
       } catch {
         setSaveStatus("idle");
@@ -50,11 +68,11 @@ export default function ReviewPage({ bookId, onClose, onSave }: ReviewPageProps)
   );
 
   const scheduleSave = useCallback(
-    (json: string) => {
-      editorContentRef.current = json;
+    (body: string | null) => {
+      editorContentRef.current = body;
       dirtyRef.current = true;
       if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => doSave(json), 2000);
+      timerRef.current = setTimeout(() => doSave(body), 2000);
     },
     [doSave]
   );
@@ -64,13 +82,27 @@ export default function ReviewPage({ bookId, onClose, onSave }: ReviewPageProps)
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
       if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
-      if (dirtyRef.current && editorContentRef.current) {
-        localStorage.setItem(`review-backup-${bookId}`, editorContentRef.current);
-        saveReview(bookId, editorContentRef.current);
-        onSave?.();
+      if (dirtyRef.current) {
+        if (entryIdRef.current != null) {
+          updateDiaryEntry(entryIdRef.current, editorContentRef.current, ratingRef.current, entryDateRef.current).catch(() => {});
+        } else {
+          createDiaryEntry(bookId, editorContentRef.current, ratingRef.current, entryDateRef.current).catch(() => {});
+        }
+        onSave();
       }
     };
   }, [bookId, onSave]);
+
+  const initialContent = (() => {
+    if (!entry?.body) return undefined;
+    try {
+      const parsed = JSON.parse(entry.body);
+      if (parsed?.type === "doc") return parsed;
+    } catch {
+      // not JSON
+    }
+    return undefined;
+  })();
 
   const editor = useEditor(
     {
@@ -78,15 +110,26 @@ export default function ReviewPage({ bookId, onClose, onSave }: ReviewPageProps)
         ...sharedExtensions,
         Placeholder.configure({ placeholder: "Write your thoughts..." }),
       ],
-      content: book ? parseReviewContent(book.review) : undefined,
+      content: initialContent,
       onUpdate: ({ editor: e }) => {
         scheduleSave(JSON.stringify(e.getJSON()));
       },
     },
-    [book]
+    []
   );
 
-  const wordCount = editor?.getText().split(/\s+/).filter(Boolean).length ?? 0;
+  const handleRatingChange = (score: number) => {
+    const newRating = score === rating ? null : score;
+    setRating(newRating);
+    ratingRef.current = newRating;
+    scheduleSave(editorContentRef.current);
+  };
+
+  const handleDateChange = (newDate: string) => {
+    setEntryDate(newDate);
+    entryDateRef.current = newDate;
+    scheduleSave(editorContentRef.current);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-white dark:bg-gray-900">
@@ -102,17 +145,20 @@ export default function ReviewPage({ bookId, onClose, onSave }: ReviewPageProps)
           </svg>
         </button>
 
-        <div className="flex min-w-0 flex-1 items-center justify-center gap-2">
-          {book?.cover_url && (
-            <img
-              src={coverSrc(book.cover_url)}
-              alt=""
-              className="h-8 w-6 rounded-sm object-cover"
-            />
-          )}
-          <span className="truncate text-sm font-medium text-gray-800 dark:text-gray-200">
-            {book?.title ?? "Loading..."}
-          </span>
+        <div className="flex min-w-0 flex-1 items-center justify-center gap-3">
+          <input
+            type="date"
+            value={entryDate}
+            onChange={(e) => handleDateChange(e.target.value)}
+            className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm
+              text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100
+              focus:ring-2 focus:ring-amber-500 focus:outline-none"
+          />
+          <RatingStars
+            rating={rating}
+            onRate={handleRatingChange}
+            size="sm"
+          />
         </div>
 
         <div className="w-16 text-right text-xs text-gray-400">
@@ -138,11 +184,6 @@ export default function ReviewPage({ bookId, onClose, onSave }: ReviewPageProps)
           />
         </div>
       </div>
-
-      {/* Word count */}
-      <div className="flex items-center justify-end px-6 py-2 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-400">
-        {`${wordCount} ${wordCount === 1 ? "word" : "words"}`}
-      </div>
     </div>
   );
 }
@@ -153,7 +194,7 @@ function Toolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
   const buttons = [
     {
       key: "bold",
-      title: "Bold (⌘B)",
+      title: "Bold",
       command: () => editor.chain().focus().toggleBold().run(),
       active: editor.isActive("bold"),
       icon: (
@@ -165,7 +206,7 @@ function Toolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
     },
     {
       key: "italic",
-      title: "Italic (⌘I)",
+      title: "Italic",
       command: () => editor.chain().focus().toggleItalic().run(),
       active: editor.isActive("italic"),
       icon: (
@@ -173,34 +214,6 @@ function Toolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
           <line x1="19" y1="4" x2="10" y2="4" />
           <line x1="14" y1="20" x2="5" y2="20" />
           <line x1="15" y1="4" x2="9" y2="20" />
-        </svg>
-      ),
-    },
-    {
-      key: "h2",
-      title: "Heading 2",
-      command: () => editor.chain().focus().toggleHeading({ level: 2 }).run(),
-      active: editor.isActive("heading", { level: 2 }),
-      icon: (
-        <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-          <path d="M4 12h8" />
-          <path d="M4 18V6" />
-          <path d="M12 18V6" />
-          <path d="M17 12a2 2 0 1 1 4 0c0 1-1.5 2-4 4h4" />
-        </svg>
-      ),
-    },
-    {
-      key: "h3",
-      title: "Heading 3",
-      command: () => editor.chain().focus().toggleHeading({ level: 3 }).run(),
-      active: editor.isActive("heading", { level: 3 }),
-      icon: (
-        <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-          <path d="M4 12h8" />
-          <path d="M4 18V6" />
-          <path d="M12 18V6" />
-          <path d="M17.5 10.5c1.7-1 3.5 0 3.5 1.5a2 2 0 0 1-2 2 2 2 0 0 1 2 2c0 1.5-1.8 2.5-3.5 1.5" />
         </svg>
       ),
     },
@@ -217,22 +230,6 @@ function Toolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
           <circle cx="5" cy="6" r="1" fill="currentColor" />
           <circle cx="5" cy="12" r="1" fill="currentColor" />
           <circle cx="5" cy="18" r="1" fill="currentColor" />
-        </svg>
-      ),
-    },
-    {
-      key: "orderedList",
-      title: "Ordered List",
-      command: () => editor.chain().focus().toggleOrderedList().run(),
-      active: editor.isActive("orderedList"),
-      icon: (
-        <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-          <line x1="10" y1="6" x2="20" y2="6" />
-          <line x1="10" y1="12" x2="20" y2="12" />
-          <line x1="10" y1="18" x2="20" y2="18" />
-          <text x="3" y="8" fontSize="7" fill="currentColor" stroke="none" fontFamily="sans-serif">1</text>
-          <text x="3" y="14" fontSize="7" fill="currentColor" stroke="none" fontFamily="sans-serif">2</text>
-          <text x="3" y="20" fontSize="7" fill="currentColor" stroke="none" fontFamily="sans-serif">3</text>
         </svg>
       ),
     },

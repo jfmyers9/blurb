@@ -17,6 +17,7 @@ fn migration_1_creates_all_tables() {
         vec![
             "book_shelves",
             "books",
+            "diary_entries",
             "highlights",
             "ratings",
             "reading_status",
@@ -35,10 +36,10 @@ fn run_migrations_preserves_existing_version() {
 }
 
 #[test]
-fn fresh_db_reaches_version_2_with_indexes() {
+fn fresh_db_reaches_latest_version_with_indexes() {
     let conn = Connection::open_in_memory().unwrap();
     run_migrations(&conn).unwrap();
-    assert_eq!(get_user_version(&conn).unwrap(), 2);
+    assert_eq!(get_user_version(&conn).unwrap(), 3);
 
     let mut stmt = conn
         .prepare(
@@ -55,6 +56,7 @@ fn fresh_db_reaches_version_2_with_indexes() {
         vec![
             "idx_book_shelves_book_id",
             "idx_book_shelves_shelf_id",
+            "idx_diary_entries_book_date",
             "idx_highlights_book_id",
             "idx_ratings_book_id",
             "idx_reading_status_book_id",
@@ -64,7 +66,7 @@ fn fresh_db_reaches_version_2_with_indexes() {
 }
 
 #[test]
-fn incremental_upgrade_from_version_1_to_2() {
+fn incremental_upgrade_from_version_1_to_latest() {
     let conn = Connection::open_in_memory().unwrap();
     conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
 
@@ -79,9 +81,9 @@ fn incremental_upgrade_from_version_1_to_2() {
     )
     .unwrap();
 
-    // Run full migrations — should only apply migration 2
+    // Run full migrations — should apply migrations 2 and 3
     run_migrations(&conn).unwrap();
-    assert_eq!(get_user_version(&conn).unwrap(), 2);
+    assert_eq!(get_user_version(&conn).unwrap(), 3);
 
     // Data from version 1 is preserved
     let title: String = conn
@@ -89,7 +91,7 @@ fn incremental_upgrade_from_version_1_to_2() {
         .unwrap();
     assert_eq!(title, "Test Book");
 
-    // Indexes exist
+    // Indexes exist (6 from migration 3 + 1 from migration 2 diary_entries)
     let idx_count: i32 = conn
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'",
@@ -97,7 +99,7 @@ fn incremental_upgrade_from_version_1_to_2() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(idx_count, 6);
+    assert_eq!(idx_count, 7);
 }
 
 #[test]
@@ -169,7 +171,7 @@ fn run_migrations_is_idempotent() {
     let conn = Connection::open_in_memory().unwrap();
     run_migrations(&conn).unwrap();
     run_migrations(&conn).unwrap();
-    assert_eq!(get_user_version(&conn).unwrap(), 2);
+    assert_eq!(get_user_version(&conn).unwrap(), 3);
 }
 
 #[test]

@@ -23,7 +23,8 @@ import LibraryList from "./components/LibraryList";
 import BookDetail from "./components/BookDetail";
 import AddBookForm from "./components/AddBookForm";
 import KindleSync from "./components/KindleSync";
-import ReviewPage from "./components/ReviewPage";
+import DiaryFeed from "./components/DiaryFeed";
+import DiaryEntryForm from "./components/DiaryEntryForm";
 import StatusFilterBar from "./components/StatusFilterBar";
 import { useLibraryFilter } from "./hooks/useLibraryFilter";
 
@@ -32,10 +33,11 @@ function App() {
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [showKindle, setShowKindle] = useState(false);
-  const [editingReviewBookId, setEditingReviewBookId] = useState<number | null>(null);
+  const [view, setView] = useState<"library" | "diary">("library");
   const [shelves, setShelves] = useState<Shelf[]>([]);
   const [bookShelfMap, setBookShelfMap] = useState<Record<number, number[]>>({});
   const [shelfBookIdsMap, setShelfBookIdsMap] = useState<Record<number, number[]>>({});
+  const [diaryPromptBookId, setDiaryPromptBookId] = useState<number | null>(null);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -159,6 +161,9 @@ function App() {
     await setReadingStatus(bookId, status);
     const data = await refresh();
     setSelectedBook(data.find((b) => b.id === bookId) ?? null);
+    if (status === "finished") {
+      setDiaryPromptBookId(bookId);
+    }
   };
 
   const handleRefreshBook = async (bookId: number) => {
@@ -270,9 +275,35 @@ function App() {
           border-b border-gray-200 bg-white/80 px-6 py-3 backdrop-blur
           dark:border-gray-800 dark:bg-gray-900/80"
       >
-        <h1 className="text-xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
-          Blurb
-        </h1>
+        <div className="flex items-center gap-4">
+          <h1 className="text-xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
+            Blurb
+          </h1>
+          <div className="flex rounded-lg bg-gray-100 p-0.5 dark:bg-gray-800">
+            <button
+              type="button"
+              onClick={() => setView("library")}
+              className={`rounded-md px-3 py-1 text-xs font-medium transition ${
+                view === "library"
+                  ? "bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-gray-100"
+                  : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              }`}
+            >
+              Library
+            </button>
+            <button
+              type="button"
+              onClick={() => setView("diary")}
+              className={`rounded-md px-3 py-1 text-xs font-medium transition ${
+                view === "diary"
+                  ? "bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-gray-100"
+                  : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              }`}
+            >
+              Diary
+            </button>
+          </div>
+        </div>
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -304,47 +335,61 @@ function App() {
 
       {/* Main */}
       <main className="flex-1">
-        <StatusFilterBar
-          books={books}
-          activeStatus={activeStatus}
-          onStatusChange={setActiveStatus}
-          sortBy={sortBy}
-          onSortChange={setSortBy}
-          shelves={shelves}
-          activeShelf={activeShelf}
-          onShelfChange={setActiveShelf}
-          shelfBookCounts={Object.fromEntries(
-            shelves.map((s) => [s.id, shelfBookIdsMap[s.id]?.length ?? 0])
-          )}
-          onRenameShelf={handleRenameShelf}
-          onDeleteShelf={handleDeleteShelf}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          minRating={minRating}
-          onMinRatingChange={setMinRating}
-          searchInputRef={searchInputRef}
-          viewMode={viewMode}
-          onViewModeChange={changeViewMode}
-        />
-        {filteredBooks.length === 0 ? (
-          <div className="flex flex-1 flex-col items-center justify-center py-24 text-center">
-            <div className="mb-4 text-6xl opacity-30">📚</div>
-            <h2 className="text-lg font-medium text-gray-600 dark:text-gray-400">
-              Your library is empty
-            </h2>
-            <p className="mt-1 text-sm text-gray-400 dark:text-gray-500">
-              Add your first book with the + button above.
-            </p>
-          </div>
-        ) : viewMode === "grid" ? (
-          <LibraryGrid
-            books={filteredBooks}
-            onSelectBook={(book) => setSelectedBook(book)}
-          />
+        {view === "library" ? (
+          <>
+            <StatusFilterBar
+              books={books}
+              activeStatus={activeStatus}
+              onStatusChange={setActiveStatus}
+              sortBy={sortBy}
+              onSortChange={setSortBy}
+              shelves={shelves}
+              activeShelf={activeShelf}
+              onShelfChange={setActiveShelf}
+              shelfBookCounts={Object.fromEntries(
+                shelves.map((s) => [s.id, shelfBookIdsMap[s.id]?.length ?? 0])
+              )}
+              onRenameShelf={handleRenameShelf}
+              onDeleteShelf={handleDeleteShelf}
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              minRating={minRating}
+              onMinRatingChange={setMinRating}
+              searchInputRef={searchInputRef}
+              viewMode={viewMode}
+              onViewModeChange={changeViewMode}
+            />
+            {filteredBooks.length === 0 ? (
+              <div className="flex flex-1 flex-col items-center justify-center py-24 text-center">
+                <div className="mb-4 text-6xl opacity-30">📚</div>
+                <h2 className="text-lg font-medium text-gray-600 dark:text-gray-400">
+                  Your library is empty
+                </h2>
+                <p className="mt-1 text-sm text-gray-400 dark:text-gray-500">
+                  Add your first book with the + button above.
+                </p>
+              </div>
+            ) : viewMode === "grid" ? (
+              <LibraryGrid
+                books={filteredBooks}
+                onSelectBook={(book) => setSelectedBook(book)}
+              />
+            ) : (
+              <LibraryList
+                books={filteredBooks}
+                onSelectBook={(book) => setSelectedBook(book)}
+              />
+            )}
+          </>
         ) : (
-          <LibraryList
-            books={filteredBooks}
-            onSelectBook={(book) => setSelectedBook(book)}
+          <DiaryFeed
+            onSelectBook={(bookId) => {
+              const book = books.find((b) => b.id === bookId);
+              if (book) {
+                setSelectedBook(book);
+                setView("library");
+              }
+            }}
           />
         )}
       </main>
@@ -359,7 +404,6 @@ function App() {
           onDelete={handleDelete}
           onRate={handleRate}
           onStatusChange={handleStatusChange}
-          onEditReview={(bookId) => setEditingReviewBookId(bookId)}
           onLookup={handleLookup}
           onCoverChange={handleCoverChange}
           shelves={shelves}
@@ -369,18 +413,6 @@ function App() {
           onCreateShelf={handleCreateShelf}
           onLoadBookShelves={loadBookShelves}
           onRefresh={handleRefreshBook}
-        />
-      )}
-
-      {/* Review overlay */}
-      {editingReviewBookId !== null && (
-        <ReviewPage
-          bookId={editingReviewBookId}
-          onClose={() => setEditingReviewBookId(null)}
-          onSave={async () => {
-            const data = await refresh();
-            setSelectedBook(data.find((b) => b.id === editingReviewBookId) ?? null);
-          }}
         />
       )}
 
@@ -398,6 +430,15 @@ function App() {
         onClose={() => setShowAddForm(false)}
         onAdd={handleAdd}
       />
+
+      {/* Diary entry prompt after finishing a book */}
+      {diaryPromptBookId != null && (
+        <DiaryEntryForm
+          bookId={diaryPromptBookId}
+          onSave={() => {}}
+          onClose={() => setDiaryPromptBookId(null)}
+        />
+      )}
     </div>
   );
 }

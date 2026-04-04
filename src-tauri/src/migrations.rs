@@ -85,6 +85,26 @@ fn migrations() -> Vec<Migration> {
         },
         Migration {
             version: 2,
+            description: "add diary_entries table",
+            up: |conn| {
+                conn.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS diary_entries(
+                    id INTEGER PRIMARY KEY,
+                    book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                    body TEXT,
+                    rating INTEGER CHECK(rating BETWEEN 1 AND 5),
+                    entry_date TEXT NOT NULL DEFAULT (date('now')),
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_diary_entries_book_date
+                    ON diary_entries(book_id, entry_date DESC, id DESC);",
+                )
+            },
+        },
+        Migration {
+            version: 3,
             description: "add indexes on foreign key columns",
             up: |conn| {
                 conn.execute_batch(

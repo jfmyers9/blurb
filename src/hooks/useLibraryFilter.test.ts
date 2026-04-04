@@ -21,7 +21,6 @@ function makeBook(overrides: Partial<Book> = {}): Book {
     finished_at: null,
     rating: null,
     status: null,
-    review: null,
     ...overrides,
   };
 }
