@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import "./App.css";
 import {
   listBooks,
@@ -19,12 +19,13 @@ import {
 } from "./lib/api";
 import type { Book, Shelf } from "./lib/api";
 import LibraryGrid from "./components/LibraryGrid";
+import LibraryList from "./components/LibraryList";
 import BookDetail from "./components/BookDetail";
 import AddBookForm from "./components/AddBookForm";
 import KindleSync from "./components/KindleSync";
 import ReviewPage from "./components/ReviewPage";
 import StatusFilterBar from "./components/StatusFilterBar";
-import type { FilterStatus, SortOption } from "./components/StatusFilterBar";
+import { useLibraryFilter } from "./hooks/useLibraryFilter";
 
 function App() {
   const [books, setBooks] = useState<Book[]>([]);
@@ -32,40 +33,21 @@ function App() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [showKindle, setShowKindle] = useState(false);
   const [editingReviewBookId, setEditingReviewBookId] = useState<number | null>(null);
-  const [activeStatus, setActiveStatus] = useState<FilterStatus>("all");
-  const [sortBy, setSortBy] = useState<SortOption>("date_added");
   const [shelves, setShelves] = useState<Shelf[]>([]);
   const [bookShelfMap, setBookShelfMap] = useState<Record<number, number[]>>({});
-  const [activeShelf, setActiveShelf] = useState<number | null>(null);
   const [shelfBookIdsMap, setShelfBookIdsMap] = useState<Record<number, number[]>>({});
 
-  const filteredBooks = useMemo(() => {
-    let filtered =
-      activeStatus === "all"
-        ? books
-        : books.filter((b) => b.status === activeStatus);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
-    if (activeShelf !== null) {
-      const bookIds = new Set(shelfBookIdsMap[activeShelf] ?? []);
-      filtered = filtered.filter((b) => bookIds.has(b.id));
-    }
-
-    filtered = [...filtered].sort((a, b) => {
-      switch (sortBy) {
-        case "title":
-          return a.title.localeCompare(b.title);
-        case "author":
-          return (a.author ?? "").localeCompare(b.author ?? "");
-        case "rating":
-          return (b.rating ?? 0) - (a.rating ?? 0);
-        case "date_added":
-        default:
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      }
-    });
-
-    return filtered;
-  }, [books, activeStatus, activeShelf, shelfBookIdsMap, sortBy]);
+  const {
+    searchQuery, setSearchQuery,
+    activeStatus, setActiveStatus,
+    sortBy, setSortBy,
+    activeShelf, setActiveShelf,
+    viewMode, setViewMode,
+    minRating, setMinRating,
+    filteredBooks,
+  } = useLibraryFilter(books, shelves, shelfBookIdsMap);
 
   const refresh = useCallback(async () => {
     const data = await listBooks();
@@ -93,6 +75,25 @@ function App() {
     refresh();
     refreshShelves();
   }, [refresh, refreshShelves]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && selectedBook) {
+        e.preventDefault();
+        setSelectedBook(null);
+        return;
+      }
+      if (e.key === "/") {
+        const tag = (document.activeElement as HTMLElement)?.tagName;
+        const editable = (document.activeElement as HTMLElement)?.isContentEditable;
+        if (tag === "INPUT" || tag === "TEXTAREA" || editable) return;
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [selectedBook]);
 
   const handleAdd = async (data: {
     title: string;
@@ -316,11 +317,28 @@ function App() {
           )}
           onRenameShelf={handleRenameShelf}
           onDeleteShelf={handleDeleteShelf}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          minRating={minRating}
+          onMinRatingChange={setMinRating}
+          searchInputRef={searchInputRef}
+          viewMode={viewMode}
+          onViewModeChange={(mode) => {
+            setViewMode(mode);
+            localStorage.setItem("blurb-view-mode", mode);
+          }}
         />
-        <LibraryGrid
-          books={filteredBooks}
-          onSelectBook={(book) => setSelectedBook(book)}
-        />
+        {viewMode === "grid" ? (
+          <LibraryGrid
+            books={filteredBooks}
+            onSelectBook={(book) => setSelectedBook(book)}
+          />
+        ) : (
+          <LibraryList
+            books={filteredBooks}
+            onSelectBook={(book) => setSelectedBook(book)}
+          />
+        )}
       </main>
 
       {/* Detail panel */}

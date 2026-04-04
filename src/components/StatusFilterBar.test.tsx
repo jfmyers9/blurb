@@ -39,6 +39,13 @@ const defaultProps = () => ({
   shelfBookCounts: {} as Record<number, number>,
   onRenameShelf: vi.fn(),
   onDeleteShelf: vi.fn(),
+  searchQuery: "",
+  onSearchChange: vi.fn(),
+  viewMode: "grid" as const,
+  onViewModeChange: vi.fn(),
+  minRating: null,
+  onMinRatingChange: vi.fn(),
+  searchInputRef: { current: null },
 });
 
 describe("StatusFilterBar", () => {
