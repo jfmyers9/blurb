@@ -15,6 +15,8 @@ export interface Book {
   updated_at: string;
   rating: number | null;
   status: string | null;
+  started_at: string | null;
+  finished_at: string | null;
   review: string | null;
 }
 
@@ -95,9 +97,25 @@ export async function setRating(
 
 export async function setReadingStatus(
   book_id: number,
-  status: string
+  status: string,
+  started_at?: string | null,
+  finished_at?: string | null
 ): Promise<void> {
-  return invoke<void>("set_reading_status", { book_id, status });
+  return invoke<void>("set_reading_status", {
+    book_id,
+    status,
+    started_at: started_at ?? null,
+    finished_at: finished_at ?? null,
+  });
+}
+
+export async function updateReadingDates(
+  book_id: number,
+  status: string,
+  started_at: string | null,
+  finished_at: string | null
+): Promise<void> {
+  return setReadingStatus(book_id, status, started_at, finished_at);
 }
 
 export interface BookMetadata {

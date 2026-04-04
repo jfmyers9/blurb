@@ -3,7 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { generateHTML } from "@tiptap/html";
 import { sharedExtensions } from "../lib/editorExtensions";
 import type { Book, BookMetadata, Highlight, Shelf } from "../lib/api";
-import { searchCovers, uploadCover, listHighlights, enrichBook } from "../lib/api";
+import { searchCovers, uploadCover, listHighlights, enrichBook, updateReadingDates } from "../lib/api";
 import { coverSrc } from "../lib/cover";
 import RatingStars from "./RatingStars";
 import StatusSelect from "./StatusSelect";
@@ -25,6 +25,7 @@ interface BookDetailProps {
   onRemoveFromShelf: (bookId: number, shelfId: number) => Promise<void>;
   onCreateShelf: (name: string) => Promise<Shelf>;
   onLoadBookShelves: (bookId: number) => Promise<void>;
+  onRefresh: (bookId: number) => Promise<void>;
 }
 
 export default function BookDetail({
@@ -43,6 +44,7 @@ export default function BookDetail({
   onRemoveFromShelf,
   onCreateShelf,
   onLoadBookShelves,
+  onRefresh,
 }: BookDetailProps) {
   const [title, setTitle] = useState(book.title);
   const [author, setAuthor] = useState(book.author ?? "");
@@ -398,6 +400,46 @@ export default function BookDetail({
               onChange={(status) => onStatusChange(book.id, status)}
             />
           </div>
+
+          {/* Reading Dates */}
+          {book.status && (
+            <div className="flex gap-4">
+              <div className="flex-1">
+                <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Started
+                </label>
+                <input
+                  type="date"
+                  value={book.started_at ?? ""}
+                  onChange={async (e) => {
+                    const val = e.target.value || null;
+                    await updateReadingDates(book.id, book.status!, val, book.finished_at);
+                    await onRefresh(book.id);
+                  }}
+                  className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5
+                    text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800
+                    dark:text-gray-100 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">
+                  {book.status === "abandoned" ? "Abandoned" : "Finished"}
+                </label>
+                <input
+                  type="date"
+                  value={book.finished_at ?? ""}
+                  onChange={async (e) => {
+                    const val = e.target.value || null;
+                    await updateReadingDates(book.id, book.status!, book.started_at, val);
+                    await onRefresh(book.id);
+                  }}
+                  className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5
+                    text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800
+                    dark:text-gray-100 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                />
+              </div>
+            </div>
+          )}
 
           {/* Shelves */}
           <div>

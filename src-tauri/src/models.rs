@@ -16,6 +16,8 @@ pub struct Book {
     pub updated_at: String,
     pub rating: Option<i32>,
     pub status: Option<String>,
+    pub started_at: Option<String>,
+    pub finished_at: Option<String>,
     pub review: Option<String>,
 }
 
