@@ -88,7 +88,7 @@ fn migrations() -> Vec<Migration> {
             description: "add diary_entries table",
             up: |conn| {
                 conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS diary_entries(
+                    "CREATE TABLE IF NOT EXISTS diary_entries(
                     id INTEGER PRIMARY KEY,
                     book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
                     body TEXT,
@@ -100,7 +100,7 @@ fn migrations() -> Vec<Migration> {
 
                 CREATE INDEX IF NOT EXISTS idx_diary_entries_book_date
                     ON diary_entries(book_id, entry_date DESC, id DESC);",
-            )
+                )
             },
         },
         Migration {

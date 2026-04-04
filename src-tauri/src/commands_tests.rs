@@ -955,7 +955,10 @@ fn test_delete_book_cascades_diary_entries() {
 #[test]
 fn test_reading_status_dates() {
     let conn = test_conn();
-    let id = add_book_db(&conn, "Dated", None, None, None, None, None, None, None, None).unwrap();
+    let id = add_book_db(
+        &conn, "Dated", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
 
     // Set to "reading" → started_at should be set
     set_reading_status_db(&conn, id, "reading", None, None).unwrap();
@@ -979,7 +982,11 @@ fn test_reading_status_dates() {
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .unwrap();
-    assert_eq!(row.0.as_deref(), Some(original_started.as_str()), "started_at preserved");
+    assert_eq!(
+        row.0.as_deref(),
+        Some(original_started.as_str()),
+        "started_at preserved"
+    );
     assert!(row.1.is_some(), "finished_at should be set");
 
     // Set back to "reading" → finished_at cleared
@@ -998,7 +1005,10 @@ fn test_reading_status_dates() {
 #[test]
 fn test_update_diary_entry_rating_validation() {
     let conn = test_conn();
-    let book_id = add_book_db(&conn, "Book", None, None, None, None, None, None, None, None).unwrap();
+    let book_id = add_book_db(
+        &conn, "Book", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
     let entry = create_diary_entry_db(&conn, book_id, None, Some(3), "2026-04-01").unwrap();
 
     assert!(update_diary_entry_db(&conn, entry.id, None, Some(0), "2026-04-01").is_err());
@@ -1009,7 +1019,10 @@ fn test_update_diary_entry_rating_validation() {
 #[test]
 fn test_diary_entry_date_validation() {
     let conn = test_conn();
-    let book_id = add_book_db(&conn, "Book", None, None, None, None, None, None, None, None).unwrap();
+    let book_id = add_book_db(
+        &conn, "Book", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
 
     assert!(create_diary_entry_db(&conn, book_id, None, None, "not-a-date").is_err());
     assert!(create_diary_entry_db(&conn, book_id, None, None, "04/01/2026").is_err());

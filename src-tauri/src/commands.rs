@@ -858,7 +858,9 @@ pub(crate) fn create_diary_entry_db(
         || !entry_date[5..7].chars().all(|c| c.is_ascii_digit())
         || !entry_date[8..].chars().all(|c| c.is_ascii_digit())
     {
-        return Err(format!("Invalid date format: {entry_date}, expected YYYY-MM-DD"));
+        return Err(format!(
+            "Invalid date format: {entry_date}, expected YYYY-MM-DD"
+        ));
     }
     conn.execute(
         "INSERT INTO diary_entries (book_id, body, rating, entry_date, created_at, updated_at) \
@@ -893,7 +895,9 @@ pub(crate) fn update_diary_entry_db(
         || !entry_date[5..7].chars().all(|c| c.is_ascii_digit())
         || !entry_date[8..].chars().all(|c| c.is_ascii_digit())
     {
-        return Err(format!("Invalid date format: {entry_date}, expected YYYY-MM-DD"));
+        return Err(format!(
+            "Invalid date format: {entry_date}, expected YYYY-MM-DD"
+        ));
     }
     conn.execute(
         "UPDATE diary_entries SET body = ?1, rating = ?2, entry_date = ?3, \
