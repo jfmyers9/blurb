@@ -51,6 +51,8 @@ export default function ShelfPicker({
       onAdd(shelf.id);
       setInput("");
       setOpen(false);
+    } catch {
+      // Creation failed — leave input as-is so user can retry
     } finally {
       setCreating(false);
     }
