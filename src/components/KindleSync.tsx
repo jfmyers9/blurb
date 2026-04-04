@@ -51,7 +51,6 @@ export default function KindleSync({
   const [clippingsCount, setClippingsCount] = useState(0);
   const [importedClippingsCount, setImportedClippingsCount] = useState(0);
   const [enrichProgress, setEnrichProgress] = useState<string | null>(null);
-  const [enrichFailed, setEnrichFailed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const cancelledRef = useRef(false);
 
@@ -121,7 +120,6 @@ export default function KindleSync({
               await enrichBook(booksToEnrich[i]);
             } catch {
               failed++;
-              setEnrichFailed(failed);
             }
           }
           if (!cancelledRef.current) {
