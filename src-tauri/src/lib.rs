@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_arguments)]
 mod commands;
 mod db;
 mod kindle;
