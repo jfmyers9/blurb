@@ -31,16 +31,3 @@ pub struct Highlight {
     pub clipped_at: Option<String>,
     pub created_at: String,
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BookInput {
-    pub title: String,
-    pub author: Option<String>,
-    pub isbn: Option<String>,
-    pub asin: Option<String>,
-    pub cover_url: Option<String>,
-    pub description: Option<String>,
-    pub publisher: Option<String>,
-    pub published_date: Option<String>,
-    pub page_count: Option<i32>,
-}

@@ -72,15 +72,15 @@ fn parse_title_author(line: &str) -> (String, Option<String>) {
     (line.to_string(), None)
 }
 
-fn parse_metadata(
-    line: &str,
-) -> Option<(
+type ClipMetadata = (
     String,
     Option<i64>,
     Option<i64>,
     Option<i64>,
     Option<String>,
-)> {
+);
+
+fn parse_metadata(line: &str) -> Option<ClipMetadata> {
     let line = line.trim().trim_start_matches("- ");
 
     let clip_type = if line.starts_with("Your Highlight") {

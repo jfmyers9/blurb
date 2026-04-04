@@ -2,7 +2,6 @@ use crate::kindle::KindleBook;
 use crate::metadata::BookMetadata;
 use crate::models::{Book, Highlight};
 use crate::AppState;
-use base64::Engine;
 use std::fs;
 use std::path::Path;
 use tauri::Manager;
