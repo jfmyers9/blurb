@@ -48,7 +48,7 @@ export default function CommandPalette({
   const [diaryEntries, setDiaryEntries] = useState<DiaryEntry[]>([]);
   const [highlights, setHighlights] = useState<HighlightSearchResult[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
     if (isOpen) {
@@ -208,7 +208,7 @@ export default function CommandPalette({
 
   if (!isOpen) return null;
 
-  const sectionOffsets = sections.reduce<number[]>((acc, s, i) => {
+  const sectionOffsets = sections.reduce<number[]>((acc, _, i) => {
     acc.push(i === 0 ? 0 : acc[i - 1] + sections[i - 1].items.length);
     return acc;
   }, []);

@@ -740,7 +740,10 @@ pub fn search_highlights(
     query: String,
 ) -> Result<Vec<HighlightSearchResult>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    let escaped = query.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+    let escaped = query
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
     let mut stmt = db
         .prepare(
             "SELECT h.id, h.book_id, h.text, h.location_start, h.location_end, h.page, \
