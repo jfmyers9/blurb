@@ -2,6 +2,7 @@ mod clippings;
 mod commands;
 mod db;
 mod kindle;
+pub(crate) mod migrations;
 mod metadata;
 mod models;
 
