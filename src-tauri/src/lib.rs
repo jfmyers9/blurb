@@ -1,4 +1,5 @@
 #![allow(clippy::too_many_arguments)]
+mod clippings;
 mod commands;
 mod db;
 mod kindle;
@@ -39,6 +40,10 @@ pub fn run() {
             commands::list_kindle_books,
             commands::import_kindle_books,
             commands::upload_cover,
+            commands::check_clippings_exist,
+            commands::import_clippings,
+            commands::list_highlights,
+            commands::enrich_book,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,8 +1,12 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   detectKindle,
   listKindleBooks,
   importKindleBooks,
+  checkClippingsExist,
+  importClippings,
+  enrichBook,
+  getBook,
 } from "../lib/api";
 import type { KindleBook } from "../lib/api";
 
@@ -13,7 +17,10 @@ type Phase =
   | "scanning"
   | "results"
   | "importing"
-  | "done";
+  | "done"
+  | "clippings"
+  | "importing_clippings"
+  | "clippings_done";
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -41,7 +48,15 @@ export default function KindleSync({
   const [kindleBooks, setKindleBooks] = useState<KindleBook[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [importedCount, setImportedCount] = useState(0);
+  const [clippingsCount, setClippingsCount] = useState(0);
+  const [importedClippingsCount, setImportedClippingsCount] = useState(0);
+  const [enrichProgress, setEnrichProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const cancelledRef = useRef(false);
+
+  useEffect(() => {
+    return () => { cancelledRef.current = true; };
+  }, []);
 
   const handleDetect = async () => {
     setPhase("detecting");
@@ -84,8 +99,47 @@ export default function KindleSync({
     try {
       const ids = await importKindleBooks(toImport);
       setImportedCount(ids.length);
-      setPhase("done");
       onImportComplete();
+
+      // Background enrichment for books missing cover_url
+      if (ids.length > 0) {
+        (async () => {
+          const booksToEnrich: number[] = [];
+          for (const id of ids) {
+            if (cancelledRef.current) return;
+            try {
+              const book = await getBook(id);
+              if (!book.cover_url) booksToEnrich.push(id);
+            } catch { /* skip */ }
+          }
+          for (let i = 0; i < booksToEnrich.length; i++) {
+            if (cancelledRef.current) break;
+            setEnrichProgress(`Enriching ${i + 1}/${booksToEnrich.length}...`);
+            try {
+              await enrichBook(booksToEnrich[i]);
+            } catch { /* best effort */ }
+          }
+          if (!cancelledRef.current) {
+            setEnrichProgress(null);
+            onImportComplete();
+          }
+        })();
+      }
+
+      // Check for clippings
+      if (mountPath) {
+        try {
+          const info = await checkClippingsExist(mountPath);
+          if (info.exists && info.count > 0) {
+            setClippingsCount(info.count);
+            setPhase("clippings");
+            return;
+          }
+        } catch {
+          // Ignore clippings check failure, proceed to done
+        }
+      }
+      setPhase("done");
     } catch (e) {
       setPhase("results");
       setError(String(e));
@@ -222,9 +276,20 @@ export default function KindleSync({
                           type="checkbox"
                           checked={selected.has(idx)}
                           onChange={() => toggleOne(idx)}
-                          className="h-4 w-4 rounded border-gray-600 bg-gray-800
+                          className="h-4 w-4 shrink-0 rounded border-gray-600 bg-gray-800
                             text-amber-500 accent-amber-500"
                         />
+                        {book.cover_data ? (
+                          <img
+                            src={`data:image/jpeg;base64,${book.cover_data}`}
+                            alt=""
+                            className="h-12 w-9 shrink-0 rounded object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-12 w-9 shrink-0 items-center justify-center rounded bg-gray-700 text-[10px] text-gray-500">
+                            No cover
+                          </div>
+                        )}
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium text-gray-200">
                             {book.title}
@@ -234,17 +299,31 @@ export default function KindleSync({
                               {book.author}
                             </p>
                           )}
+                          {book.publisher && (
+                            <p className="truncate text-xs text-gray-600">
+                              {book.publisher}
+                            </p>
+                          )}
                         </div>
-                        <span
-                          className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase text-white ${
-                            EXT_COLORS[book.extension] ?? "bg-gray-600"
-                          }`}
-                        >
-                          {book.extension}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          {formatBytes(book.size_bytes)}
-                        </span>
+                        <div className="flex shrink-0 flex-col items-end gap-1">
+                          <div className="flex gap-1">
+                            {book.cde_type && (
+                              <span className="rounded bg-gray-700 px-1.5 py-0.5 text-[10px] font-medium uppercase text-gray-300">
+                                {book.cde_type}
+                              </span>
+                            )}
+                            <span
+                              className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase text-white ${
+                                EXT_COLORS[book.extension] ?? "bg-gray-600"
+                              }`}
+                            >
+                              {book.extension}
+                            </span>
+                          </div>
+                          <span className="text-xs text-gray-500">
+                            {formatBytes(book.size_bytes)}
+                          </span>
+                        </div>
                       </label>
                     ))}
                   </div>
@@ -260,7 +339,65 @@ export default function KindleSync({
             </div>
           )}
 
-          {phase === "done" && (
+          {phase === "clippings" && (
+            <div className="flex flex-col items-center gap-4 py-8 text-center">
+              <div className="rounded-full bg-amber-900/40 p-3">
+                <svg className="h-8 w-8 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                    d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                </svg>
+              </div>
+              <p className="text-gray-300">
+                Imported <span className="font-bold text-amber-400">{importedCount}</span> book
+                {importedCount !== 1 ? "s" : ""}
+              </p>
+              <p className="text-gray-400 text-sm">
+                Found <span className="font-bold text-amber-400">{clippingsCount}</span> highlight
+                {clippingsCount !== 1 ? "s" : ""} in My Clippings.txt
+              </p>
+              {enrichProgress && (
+                <p className="text-sm text-amber-400 animate-pulse">
+                  {enrichProgress}
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!mountPath) return;
+                  setPhase("importing_clippings");
+                  setError(null);
+                  try {
+                    const count = await importClippings(mountPath);
+                    setImportedClippingsCount(count);
+                    setPhase("clippings_done");
+                  } catch (e) {
+                    setError(String(e));
+                    setPhase("clippings_done");
+                  }
+                }}
+                className="rounded-lg bg-amber-600 px-5 py-2 text-sm font-medium
+                  text-white transition hover:bg-amber-700 active:scale-95"
+              >
+                Import Highlights
+              </button>
+              <button
+                type="button"
+                onClick={() => setPhase("done")}
+                className="text-sm text-gray-500 hover:text-gray-300"
+              >
+                Skip
+              </button>
+            </div>
+          )}
+
+          {phase === "importing_clippings" && (
+            <div className="flex flex-col items-center gap-3 py-12">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-amber-500 border-t-transparent" />
+              <p className="text-sm text-gray-400">Importing highlights...</p>
+            </div>
+          )}
+
+          {(phase === "done" || phase === "clippings_done") && (
             <div className="flex flex-col items-center gap-4 py-8 text-center">
               <div className="rounded-full bg-green-900/40 p-3">
                 <svg className="h-8 w-8 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -276,6 +413,17 @@ export default function KindleSync({
                   </span>
                 )}
               </p>
+              {enrichProgress && (
+                <p className="text-sm text-amber-400 animate-pulse">
+                  {enrichProgress}
+                </p>
+              )}
+              {phase === "clippings_done" && importedClippingsCount > 0 && (
+                <p className="text-gray-300">
+                  Imported <span className="font-bold text-amber-400">{importedClippingsCount}</span> highlight
+                  {importedClippingsCount !== 1 ? "s" : ""}
+                </p>
+              )}
               <button
                 type="button"
                 onClick={onClose}

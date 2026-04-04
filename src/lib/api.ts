@@ -108,6 +108,7 @@ export interface BookMetadata {
   publisher: string | null;
   published_date: string | null;
   page_count: number | null;
+  isbn: string | null;
 }
 
 export async function lookupIsbn(isbn: string): Promise<BookMetadata> {
@@ -130,6 +131,14 @@ export interface KindleBook {
   path: string;
   title: string;
   author: string | null;
+  asin: string | null;
+  isbn: string | null;
+  publisher: string | null;
+  description: string | null;
+  published_date: string | null;
+  language: string | null;
+  cover_data: string | null;
+  cde_type: string | null;
   extension: string;
   size_bytes: number;
 }
@@ -155,4 +164,43 @@ export async function uploadCover(
   source_path: string
 ): Promise<string> {
   return invoke<string>("upload_cover", { book_id, source_path });
+}
+
+export interface Highlight {
+  id: number;
+  book_id: number;
+  text: string;
+  location_start: number | null;
+  location_end: number | null;
+  page: number | null;
+  clip_type: string;
+  clipped_at: string | null;
+  created_at: string;
+}
+
+export interface ClippingsInfo {
+  exists: boolean;
+  count: number;
+}
+
+export async function checkClippingsExist(
+  mount_path: string
+): Promise<ClippingsInfo> {
+  return invoke<ClippingsInfo>("check_clippings_exist", { mount_path });
+}
+
+export async function importClippings(
+  mount_path: string
+): Promise<number> {
+  return invoke<number>("import_clippings", { mount_path });
+}
+
+export async function enrichBook(book_id: number): Promise<void> {
+  return invoke<void>("enrich_book", { book_id });
+}
+
+export async function listHighlights(
+  book_id: number
+): Promise<Highlight[]> {
+  return invoke<Highlight[]>("list_highlights", { book_id });
 }

@@ -18,3 +18,16 @@ pub struct Book {
     pub status: Option<String>,
     pub review: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Highlight {
+    pub id: i64,
+    pub book_id: i64,
+    pub text: String,
+    pub location_start: Option<i64>,
+    pub location_end: Option<i64>,
+    pub page: Option<i64>,
+    pub clip_type: String,
+    pub clipped_at: Option<String>,
+    pub created_at: String,
+}
