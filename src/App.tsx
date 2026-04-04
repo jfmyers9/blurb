@@ -15,7 +15,7 @@ import {
   createShelf,
   renameShelf,
   deleteShelf,
-  listShelfBookIds,
+  listAllShelfBookIds,
 } from "./lib/api";
 import type { Book, Shelf } from "./lib/api";
 import LibraryGrid from "./components/LibraryGrid";
@@ -24,7 +24,7 @@ import AddBookForm from "./components/AddBookForm";
 import KindleSync from "./components/KindleSync";
 import ReviewPage from "./components/ReviewPage";
 import StatusFilterBar from "./components/StatusFilterBar";
-import type { SortOption } from "./components/StatusFilterBar";
+import type { FilterStatus, SortOption } from "./components/StatusFilterBar";
 
 function App() {
   const [books, setBooks] = useState<Book[]>([]);
@@ -32,7 +32,7 @@ function App() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [showKindle, setShowKindle] = useState(false);
   const [editingReviewBookId, setEditingReviewBookId] = useState<number | null>(null);
-  const [activeStatus, setActiveStatus] = useState("all");
+  const [activeStatus, setActiveStatus] = useState<FilterStatus>("all");
   const [sortBy, setSortBy] = useState<SortOption>("date_added");
   const [shelves, setShelves] = useState<Shelf[]>([]);
   const [bookShelfMap, setBookShelfMap] = useState<Record<number, number[]>>({});
@@ -70,24 +70,16 @@ function App() {
   const refresh = useCallback(async () => {
     const data = await listBooks();
     setBooks(data);
-  }, []);
-
-  // Refresh selected book from latest list
-  const refreshAndSync = useCallback(async () => {
-    const data = await listBooks();
-    setBooks(data);
     return data;
   }, []);
 
   const refreshShelves = useCallback(async () => {
-    const s = await listShelves();
+    const [s, pairs] = await Promise.all([listShelves(), listAllShelfBookIds()]);
     setShelves(s);
     const map: Record<number, number[]> = {};
-    await Promise.all(
-      s.map(async (shelf) => {
-        map[shelf.id] = await listShelfBookIds(shelf.id);
-      })
-    );
+    for (const [shelfId, bookId] of pairs) {
+      (map[shelfId] ??= []).push(bookId);
+    }
     setShelfBookIdsMap(map);
     return s;
   }, []);
@@ -144,7 +136,7 @@ function App() {
       published_date: book.published_date,
       page_count: book.page_count,
     });
-    const data = await refreshAndSync();
+    const data = await refresh();
     setSelectedBook(data.find((b) => b.id === id) ?? null);
   };
 
@@ -152,17 +144,18 @@ function App() {
     await deleteBook(id);
     setSelectedBook(null);
     await refresh();
+    await refreshShelves();
   };
 
   const handleRate = async (bookId: number, score: number) => {
     await setRating(bookId, score);
-    const data = await refreshAndSync();
+    const data = await refresh();
     setSelectedBook(data.find((b) => b.id === bookId) ?? null);
   };
 
   const handleStatusChange = async (bookId: number, status: string) => {
     await setReadingStatus(bookId, status);
-    const data = await refreshAndSync();
+    const data = await refresh();
     setSelectedBook(data.find((b) => b.id === bookId) ?? null);
   };
 
@@ -187,7 +180,9 @@ function App() {
   const handleCreateShelf = async (name: string) => {
     const id = await createShelf(name);
     const updated = await refreshShelves();
-    return updated.find((s) => s.id === id)!;
+    const created = updated.find((s) => s.id === id);
+    if (!created) throw new Error(`Shelf ${id} not found after creation`);
+    return created;
   };
 
   const handleRenameShelf = async (shelfId: number, newName: string) => {
@@ -210,6 +205,14 @@ function App() {
       delete next[shelfId];
       return next;
     });
+    setBookShelfMap((prev) => {
+      const next: Record<number, number[]> = {};
+      for (const [bookId, shelfIds] of Object.entries(prev)) {
+        const filtered = shelfIds.filter((id) => id !== shelfId);
+        if (filtered.length > 0) next[Number(bookId)] = filtered;
+      }
+      return next;
+    });
     if (activeShelf === shelfId) setActiveShelf(null);
   };
 
@@ -228,7 +231,7 @@ function App() {
       published_date: book.published_date,
       page_count: book.page_count,
     });
-    const data = await refreshAndSync();
+    const data = await refresh();
     setSelectedBook(data.find((b) => b.id === bookId) ?? null);
   };
 
@@ -248,7 +251,7 @@ function App() {
       published_date: meta.published_date ?? book.published_date,
       page_count: meta.page_count ?? book.page_count,
     });
-    const data = await refreshAndSync();
+    const data = await refresh();
     setSelectedBook(data.find((b) => b.id === bookId) ?? null);
   };
 
@@ -342,7 +345,7 @@ function App() {
           bookId={editingReviewBookId}
           onClose={() => setEditingReviewBookId(null)}
           onSave={async () => {
-            const data = await refreshAndSync();
+            const data = await refresh();
             setSelectedBook(data.find((b) => b.id === editingReviewBookId) ?? null);
           }}
         />

@@ -52,6 +52,7 @@ pub fn run() {
             commands::remove_book_from_shelf,
             commands::list_book_shelves,
             commands::list_shelf_book_ids,
+            commands::list_all_shelf_book_ids,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

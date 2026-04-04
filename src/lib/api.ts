@@ -255,3 +255,7 @@ export async function listShelfBookIds(
 ): Promise<number[]> {
   return invoke<number[]>("list_shelf_book_ids", { shelf_id });
 }
+
+export async function listAllShelfBookIds(): Promise<[number, number][]> {
+  return invoke<[number, number][]>("list_all_shelf_book_ids");
+}

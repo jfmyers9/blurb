@@ -53,7 +53,7 @@ export default function BookDetail({
 
   useEffect(() => {
     listHighlights(book.id).then(setHighlights).catch(() => setHighlights([]));
-    onLoadBookShelves(book.id);
+    onLoadBookShelves(book.id).catch(() => {});
   }, [book.id, onLoadBookShelves]);
 
   const [showCoverMenu, setShowCoverMenu] = useState(false);

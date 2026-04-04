@@ -138,6 +138,38 @@ describe("StatusFilterBar", () => {
     expect(props.onShelfChange).toHaveBeenCalledWith(7);
   });
 
+  it("commits rename on blur", async () => {
+    const props = defaultProps();
+    const shelves: Shelf[] = [{ id: 1, name: "Old", created_at: "2024-01-01" }];
+    props.onRenameShelf = vi.fn().mockResolvedValue(undefined);
+    render(<StatusFilterBar {...props} shelves={shelves} shelfBookCounts={{ 1: 0 }} />);
+
+    const renameBtn = screen.getByTitle("Rename shelf");
+    fireEvent.click(renameBtn);
+
+    const input = screen.getByDisplayValue("Old");
+    fireEvent.change(input, { target: { value: "New" } });
+    fireEvent.blur(input);
+
+    await vi.waitFor(() => {
+      expect(props.onRenameShelf).toHaveBeenCalledWith(1, "New");
+    });
+  });
+
+  it("cancels rename on Escape without calling onRenameShelf", () => {
+    const props = defaultProps();
+    const shelves: Shelf[] = [{ id: 1, name: "Keep", created_at: "2024-01-01" }];
+    render(<StatusFilterBar {...props} shelves={shelves} shelfBookCounts={{ 1: 0 }} />);
+
+    fireEvent.click(screen.getByTitle("Rename shelf"));
+    const input = screen.getByDisplayValue("Keep");
+    fireEvent.change(input, { target: { value: "Changed" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    expect(props.onRenameShelf).not.toHaveBeenCalled();
+    expect(screen.getByText("Keep")).toBeInTheDocument();
+  });
+
   it("calls onShelfChange(null) when clicking All Shelves", () => {
     const props = defaultProps();
     const shelves: Shelf[] = [

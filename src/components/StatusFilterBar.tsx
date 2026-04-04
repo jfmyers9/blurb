@@ -10,6 +10,7 @@ const FILTER_STATUSES = [
   { value: "abandoned", label: "Abandoned" },
 ] as const;
 
+export type FilterStatus = (typeof FILTER_STATUSES)[number]["value"];
 export type SortOption = "title" | "author" | "date_added" | "rating";
 
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
@@ -21,8 +22,8 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
 
 interface StatusFilterBarProps {
   books: Book[];
-  activeStatus: string;
-  onStatusChange: (status: string) => void;
+  activeStatus: FilterStatus;
+  onStatusChange: (status: FilterStatus) => void;
   sortBy: SortOption;
   onSortChange: (sort: SortOption) => void;
   shelves: Shelf[];
@@ -59,7 +60,12 @@ function ShelfPill({
   const commitRename = async () => {
     const trimmed = editName.trim();
     if (trimmed && trimmed !== shelf.name) {
-      await onRename(trimmed);
+      try {
+        await onRename(trimmed);
+      } catch {
+        setEditName(shelf.name);
+        return;
+      }
     } else {
       setEditName(shelf.name);
     }

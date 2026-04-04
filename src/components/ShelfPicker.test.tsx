@@ -93,6 +93,20 @@ describe("ShelfPicker", () => {
     expect(screen.queryByText(/Create/)).not.toBeInTheDocument();
   });
 
+  it("recovers when onCreate rejects", async () => {
+    const props = defaultProps();
+    props.onCreate = vi.fn().mockRejectedValue(new Error("fail"));
+    render(<ShelfPicker {...props} bookShelfIds={[]} />);
+    const input = screen.getByPlaceholderText("Add to shelf...");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "Broken" } });
+    fireEvent.click(screen.getByText('Create "Broken"'));
+    await vi.waitFor(() => {
+      expect(screen.queryByText("Creating...")).not.toBeInTheDocument();
+    });
+    expect(props.onAdd).not.toHaveBeenCalled();
+  });
+
   it("calls onCreate and onAdd when clicking the create button", async () => {
     const props = defaultProps();
     render(<ShelfPicker {...props} bookShelfIds={[]} />);
