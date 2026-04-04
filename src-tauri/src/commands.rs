@@ -70,14 +70,14 @@ pub(crate) fn add_book_db(
 pub(crate) fn list_books_db(conn: &rusqlite::Connection) -> Result<Vec<Book>, rusqlite::Error> {
     let mut stmt = conn.prepare(&format!("{} ORDER BY b.updated_at DESC", BOOK_SELECT))?;
     let books = stmt
-        .query_map([], |row| row_to_book(row))?
+        .query_map([], row_to_book)?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(books)
 }
 
 pub(crate) fn get_book_db(conn: &rusqlite::Connection, id: i64) -> Result<Book, rusqlite::Error> {
     let mut stmt = conn.prepare(&format!("{} WHERE b.id = ?1", BOOK_SELECT))?;
-    stmt.query_row([id], |row| row_to_book(row))
+    stmt.query_row([id], row_to_book)
 }
 
 pub(crate) fn update_book_db(
