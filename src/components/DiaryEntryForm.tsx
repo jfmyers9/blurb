@@ -11,6 +11,7 @@ import RatingStars from "./RatingStars";
 
 interface DiaryEntryFormProps {
   bookId: number;
+  bookTitle?: string;
   entry?: DiaryEntry;
   onSave: () => void;
   onClose: () => void;
@@ -24,6 +25,7 @@ function todayString() {
 
 export default function DiaryEntryForm({
   bookId,
+  bookTitle,
   entry,
   onSave,
   onClose,
@@ -32,14 +34,15 @@ export default function DiaryEntryForm({
   const [rating, setRating] = useState<number | null>(entry?.rating ?? null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [entryId, setEntryId] = useState<number | null>(entry?.id ?? null);
+  const [closing, setClosing] = useState(false);
 
   const dirtyRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editorContentRef = useRef<string | null>(entry?.body ?? null);
   const ratingRef = useRef<number | null>(rating);
   const entryDateRef = useRef(entryDate);
   const entryIdRef = useRef<number | null>(entryId);
+  const savingPromiseRef = useRef<Promise<void> | null>(null);
 
   ratingRef.current = rating;
   entryDateRef.current = entryDate;
@@ -48,21 +51,26 @@ export default function DiaryEntryForm({
   const doSave = useCallback(
     async (body: string | null) => {
       setSaveStatus("saving");
-      try {
-        if (entryIdRef.current != null) {
-          await updateDiaryEntry(entryIdRef.current, body, ratingRef.current, entryDateRef.current);
-        } else {
-          const created = await createDiaryEntry(bookId, body, ratingRef.current, entryDateRef.current);
-          setEntryId(created.id);
-          entryIdRef.current = created.id;
+      const promise = (async () => {
+        try {
+          if (entryIdRef.current != null) {
+            await updateDiaryEntry(entryIdRef.current, body, ratingRef.current, entryDateRef.current);
+          } else {
+            const created = await createDiaryEntry(bookId, body, ratingRef.current, entryDateRef.current);
+            setEntryId(created.id);
+            entryIdRef.current = created.id;
+          }
+          dirtyRef.current = false;
+          setSaveStatus("saved");
+          onSave();
+        } catch {
+          setSaveStatus("idle");
+        } finally {
+          savingPromiseRef.current = null;
         }
-        dirtyRef.current = false;
-        setSaveStatus("saved");
-        onSave();
-        savedTimerRef.current = setTimeout(() => setSaveStatus("idle"), 4000);
-      } catch {
-        setSaveStatus("idle");
-      }
+      })();
+      savingPromiseRef.current = promise;
+      await promise;
     },
     [bookId, onSave]
   );
@@ -71,27 +79,35 @@ export default function DiaryEntryForm({
     (body: string | null) => {
       editorContentRef.current = body;
       dirtyRef.current = true;
+      setSaveStatus("idle");
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => doSave(body), 2000);
     },
     [doSave]
   );
 
-  // Flush pending save on unmount
+  const handleClose = useCallback(async () => {
+    setClosing(true);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    try {
+      if (dirtyRef.current) {
+        await doSave(editorContentRef.current);
+      } else if (savingPromiseRef.current) {
+        await savingPromiseRef.current;
+      } else {
+        onSave();
+      }
+    } finally {
+      onClose();
+    }
+  }, [doSave, onSave, onClose]);
+
+  // Clean up timers on unmount
   useEffect(() => {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
-      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
-      if (dirtyRef.current) {
-        if (entryIdRef.current != null) {
-          updateDiaryEntry(entryIdRef.current, editorContentRef.current, ratingRef.current, entryDateRef.current).catch(() => {});
-        } else {
-          createDiaryEntry(bookId, editorContentRef.current, ratingRef.current, entryDateRef.current).catch(() => {});
-        }
-        onSave();
-      }
     };
-  }, [bookId, onSave]);
+  }, []);
 
   const initialContent = (() => {
     if (!entry?.body) return undefined;
@@ -119,27 +135,16 @@ export default function DiaryEntryForm({
     []
   );
 
-  // Escape to close (flush pending save)
+  // Escape to close (await pending save)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        if (timerRef.current) clearTimeout(timerRef.current);
-        if (dirtyRef.current) {
-          const body = editorContentRef.current;
-          if (entryIdRef.current != null) {
-            updateDiaryEntry(entryIdRef.current, body, ratingRef.current, entryDateRef.current).catch(() => {});
-          } else {
-            createDiaryEntry(bookId, body, ratingRef.current, entryDateRef.current).catch(() => {});
-          }
-          dirtyRef.current = false;
-          onSave();
-        }
-        onClose();
+        handleClose();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [bookId, onClose, onSave]);
+  }, [handleClose]);
 
   const handleRatingChange = (score: number) => {
     const newRating = score === rating ? null : score;
@@ -159,7 +164,8 @@ export default function DiaryEntryForm({
       {/* Top bar */}
       <div className="flex items-center gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-700">
         <button
-          onClick={onClose}
+          onClick={handleClose}
+          disabled={closing}
           className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
           aria-label="Close"
         >
@@ -169,6 +175,11 @@ export default function DiaryEntryForm({
         </button>
 
         <div className="flex min-w-0 flex-1 items-center justify-center gap-3">
+          {bookTitle && (
+            <span className="truncate text-sm font-medium text-gray-700 dark:text-gray-300">
+              {bookTitle}
+            </span>
+          )}
           <input
             type="date"
             value={entryDate}
@@ -185,8 +196,8 @@ export default function DiaryEntryForm({
         </div>
 
         <div className="w-20 text-right text-sm text-gray-400">
-          {saveStatus === "saving" && "Saving\u2026"}
-          {saveStatus === "saved" && (
+          {(saveStatus === "saving" || closing) && "Saving\u2026"}
+          {saveStatus === "saved" && !closing && (
             <span className="text-green-600 dark:text-green-400">&check; Saved</span>
           )}
         </div>

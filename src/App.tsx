@@ -435,7 +435,8 @@ function App() {
       {diaryPromptBookId != null && (
         <DiaryEntryForm
           bookId={diaryPromptBookId}
-          onSave={() => {}}
+          bookTitle={books.find((b) => b.id === diaryPromptBookId)?.title}
+          onSave={() => refresh()}
           onClose={() => setDiaryPromptBookId(null)}
         />
       )}
