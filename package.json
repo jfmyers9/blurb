@@ -16,6 +16,7 @@
     "@tauri-apps/plugin-dialog": "^2.6.0",
     "@tauri-apps/plugin-opener": "^2",
     "@tiptap/extension-placeholder": "^3.22.1",
+    "@tiptap/html": "^3.22.1",
     "@tiptap/react": "^3.22.1",
     "@tiptap/starter-kit": "^3.22.1",
     "react": "^19.1.0",
