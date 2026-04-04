@@ -44,7 +44,7 @@ function App() {
     activeStatus, setActiveStatus,
     sortBy, setSortBy,
     activeShelf, setActiveShelf,
-    viewMode, setViewMode,
+    viewMode, changeViewMode,
     minRating, setMinRating,
     filteredBooks,
   } = useLibraryFilter(books, shelves, shelfBookIdsMap);
@@ -84,9 +84,10 @@ function App() {
         return;
       }
       if (e.key === "/") {
-        const tag = (document.activeElement as HTMLElement)?.tagName;
-        const editable = (document.activeElement as HTMLElement)?.isContentEditable;
-        if (tag === "INPUT" || tag === "TEXTAREA" || editable) return;
+        const el = document.activeElement;
+        if (el instanceof HTMLElement) {
+          if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;
+        }
         e.preventDefault();
         searchInputRef.current?.focus();
       }
@@ -323,12 +324,19 @@ function App() {
           onMinRatingChange={setMinRating}
           searchInputRef={searchInputRef}
           viewMode={viewMode}
-          onViewModeChange={(mode) => {
-            setViewMode(mode);
-            localStorage.setItem("blurb-view-mode", mode);
-          }}
+          onViewModeChange={changeViewMode}
         />
-        {viewMode === "grid" ? (
+        {filteredBooks.length === 0 ? (
+          <div className="flex flex-1 flex-col items-center justify-center py-24 text-center">
+            <div className="mb-4 text-6xl opacity-30">📚</div>
+            <h2 className="text-lg font-medium text-gray-600 dark:text-gray-400">
+              Your library is empty
+            </h2>
+            <p className="mt-1 text-sm text-gray-400 dark:text-gray-500">
+              Add your first book with the + button above.
+            </p>
+          </div>
+        ) : viewMode === "grid" ? (
           <LibraryGrid
             books={filteredBooks}
             onSelectBook={(book) => setSelectedBook(book)}

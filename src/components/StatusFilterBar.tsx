@@ -90,6 +90,7 @@ function ShelfPill({
         onKeyDown={(e) => {
           if (e.key === "Enter") commitRename();
           if (e.key === "Escape") {
+            e.stopPropagation();
             setEditName(shelf.name);
             setEditing(false);
           }

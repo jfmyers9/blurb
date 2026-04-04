@@ -192,4 +192,58 @@ describe("StatusFilterBar", () => {
     fireEvent.click(screen.getByText("All Shelves"));
     expect(props.onShelfChange).toHaveBeenCalledWith(null);
   });
+
+  it("search input renders and calls onSearchChange when user types", () => {
+    const props = defaultProps();
+    render(<StatusFilterBar {...props} />);
+    const input = screen.getByPlaceholderText("Search...");
+    fireEvent.change(input, { target: { value: "hello" } });
+    expect(props.onSearchChange).toHaveBeenCalledWith("hello");
+  });
+
+  it("renders rating pills when at least one book has a rating", () => {
+    const props = defaultProps();
+    props.books = [makeBook({ id: 1, rating: 4 })];
+    render(<StatusFilterBar {...props} />);
+    expect(screen.getByText("Any Rating")).toBeInTheDocument();
+    expect(screen.getByText("3+")).toBeInTheDocument();
+    expect(screen.getByText("4+")).toBeInTheDocument();
+  });
+
+  it("does not render rating pills when no books have ratings", () => {
+    const props = defaultProps();
+    props.books = [makeBook({ id: 1, rating: null })];
+    render(<StatusFilterBar {...props} />);
+    expect(screen.queryByText("Any Rating")).not.toBeInTheDocument();
+  });
+
+  it("clicking 3+ pill calls onMinRatingChange(3)", () => {
+    const props = defaultProps();
+    props.books = [makeBook({ id: 1, rating: 4 })];
+    render(<StatusFilterBar {...props} />);
+    fireEvent.click(screen.getByText("3+"));
+    expect(props.onMinRatingChange).toHaveBeenCalledWith(3);
+  });
+
+  it("clicking Any Rating pill calls onMinRatingChange(null)", () => {
+    const props = defaultProps();
+    props.books = [makeBook({ id: 1, rating: 4 })];
+    render(<StatusFilterBar {...props} />);
+    fireEvent.click(screen.getByText("Any Rating"));
+    expect(props.onMinRatingChange).toHaveBeenCalledWith(null);
+  });
+
+  it("grid view toggle button calls onViewModeChange('grid')", () => {
+    const props = defaultProps();
+    render(<StatusFilterBar {...props} />);
+    fireEvent.click(screen.getByTitle("Grid view"));
+    expect(props.onViewModeChange).toHaveBeenCalledWith("grid");
+  });
+
+  it("list view toggle button calls onViewModeChange('list')", () => {
+    const props = defaultProps();
+    render(<StatusFilterBar {...props} />);
+    fireEvent.click(screen.getByTitle("List view"));
+    expect(props.onViewModeChange).toHaveBeenCalledWith("list");
+  });
 });

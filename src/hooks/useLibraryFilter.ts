@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import type { Book, Shelf } from "../lib/api";
 import type { FilterStatus, SortOption, ViewMode } from "../components/StatusFilterBar";
 
@@ -11,10 +11,16 @@ export function useLibraryFilter(
   const [activeStatus, setActiveStatus] = useState<FilterStatus>("all");
   const [sortBy, setSortBy] = useState<SortOption>("date_added");
   const [activeShelf, setActiveShelf] = useState<number | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>(
-    () => (localStorage.getItem("blurb-view-mode") as ViewMode) || "grid"
-  );
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const stored = localStorage.getItem("blurb-view-mode");
+    return stored === "grid" || stored === "list" ? stored : "grid";
+  });
   const [minRating, setMinRating] = useState<number | null>(null);
+
+  const changeViewMode = useCallback((mode: ViewMode) => {
+    setViewMode(mode);
+    localStorage.setItem("blurb-view-mode", mode);
+  }, []);
 
   const searchableText = useMemo(() => {
     const map = new Map<number, string>();
@@ -84,7 +90,7 @@ export function useLibraryFilter(
     activeShelf,
     setActiveShelf,
     viewMode,
-    setViewMode,
+    changeViewMode,
     minRating,
     setMinRating,
     filteredBooks,
