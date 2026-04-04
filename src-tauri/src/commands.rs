@@ -52,7 +52,17 @@ pub(crate) fn add_book_db(
         "INSERT INTO books (title, author, isbn, asin, cover_url, description, \
          publisher, published_date, page_count, created_at, updated_at) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, datetime('now'), datetime('now'))",
-        rusqlite::params![title, author, isbn, asin, cover_url, description, publisher, published_date, page_count],
+        rusqlite::params![
+            title,
+            author,
+            isbn,
+            asin,
+            cover_url,
+            description,
+            publisher,
+            published_date,
+            page_count
+        ],
     )?;
     Ok(conn.last_insert_rowid())
 }
@@ -87,7 +97,18 @@ pub(crate) fn update_book_db(
         "UPDATE books SET title=?1, author=?2, isbn=?3, asin=?4, cover_url=?5, \
          description=?6, publisher=?7, published_date=?8, page_count=?9, \
          updated_at=datetime('now') WHERE id=?10",
-        rusqlite::params![title, author, isbn, asin, cover_url, description, publisher, published_date, page_count, id],
+        rusqlite::params![
+            title,
+            author,
+            isbn,
+            asin,
+            cover_url,
+            description,
+            publisher,
+            published_date,
+            page_count,
+            id
+        ],
     )?;
     get_book_db(conn, id)
 }
@@ -97,7 +118,11 @@ pub(crate) fn delete_book_db(conn: &rusqlite::Connection, id: i64) -> Result<(),
     Ok(())
 }
 
-pub(crate) fn set_rating_db(conn: &rusqlite::Connection, book_id: i64, score: i32) -> Result<(), rusqlite::Error> {
+pub(crate) fn set_rating_db(
+    conn: &rusqlite::Connection,
+    book_id: i64,
+    score: i32,
+) -> Result<(), rusqlite::Error> {
     conn.execute(
         "INSERT INTO ratings (book_id, score, created_at, updated_at) \
          VALUES (?1, ?2, datetime('now'), datetime('now')) \
@@ -107,7 +132,11 @@ pub(crate) fn set_rating_db(conn: &rusqlite::Connection, book_id: i64, score: i3
     Ok(())
 }
 
-pub(crate) fn set_reading_status_db(conn: &rusqlite::Connection, book_id: i64, status: &str) -> Result<(), rusqlite::Error> {
+pub(crate) fn set_reading_status_db(
+    conn: &rusqlite::Connection,
+    book_id: i64,
+    status: &str,
+) -> Result<(), rusqlite::Error> {
     conn.execute(
         "INSERT INTO reading_status (book_id, status, updated_at) \
          VALUES (?1, ?2, datetime('now')) \
@@ -117,7 +146,11 @@ pub(crate) fn set_reading_status_db(conn: &rusqlite::Connection, book_id: i64, s
     Ok(())
 }
 
-pub(crate) fn save_review_db(conn: &rusqlite::Connection, book_id: i64, body: &str) -> Result<(), rusqlite::Error> {
+pub(crate) fn save_review_db(
+    conn: &rusqlite::Connection,
+    book_id: i64,
+    body: &str,
+) -> Result<(), rusqlite::Error> {
     conn.execute(
         "INSERT INTO reviews (book_id, body, created_at, updated_at) \
          VALUES (?1, ?2, datetime('now'), datetime('now')) \
@@ -127,7 +160,10 @@ pub(crate) fn save_review_db(conn: &rusqlite::Connection, book_id: i64, body: &s
     Ok(())
 }
 
-pub(crate) fn import_kindle_books_db(conn: &rusqlite::Connection, books: &[KindleBook]) -> Result<Vec<i64>, rusqlite::Error> {
+pub(crate) fn import_kindle_books_db(
+    conn: &rusqlite::Connection,
+    books: &[KindleBook],
+) -> Result<Vec<i64>, rusqlite::Error> {
     let mut ids = Vec::new();
     for book in books {
         let exists: bool = conn.query_row(
@@ -316,10 +352,7 @@ pub fn upload_cover(
     source_path: String,
 ) -> Result<String, String> {
     let source = Path::new(&source_path);
-    let ext = source
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("jpg");
+    let ext = source.extension().and_then(|e| e.to_str()).unwrap_or("jpg");
 
     let covers_dir = app_handle
         .path()
@@ -367,7 +400,19 @@ mod tests {
     #[test]
     fn test_add_and_list_books() {
         let conn = test_conn();
-        let id = add_book_db(&conn, "Test Book", Some("Test Author"), None, None, None, None, None, None, None).unwrap();
+        let id = add_book_db(
+            &conn,
+            "Test Book",
+            Some("Test Author"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         let books = list_books_db(&conn).unwrap();
         assert_eq!(books.len(), 1);
@@ -379,7 +424,19 @@ mod tests {
     #[test]
     fn test_get_book() {
         let conn = test_conn();
-        let id = add_book_db(&conn, "Get Me", Some("Author"), None, None, None, None, None, None, None).unwrap();
+        let id = add_book_db(
+            &conn,
+            "Get Me",
+            Some("Author"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         let book = get_book_db(&conn, id).unwrap();
         assert_eq!(book.title, "Get Me");
@@ -392,9 +449,34 @@ mod tests {
     #[test]
     fn test_update_book() {
         let conn = test_conn();
-        let id = add_book_db(&conn, "Old Title", Some("Old Author"), None, None, None, None, None, None, None).unwrap();
+        let id = add_book_db(
+            &conn,
+            "Old Title",
+            Some("Old Author"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
-        let book = update_book_db(&conn, id, "New Title", Some("New Author"), None, None, None, None, None, None, None).unwrap();
+        let book = update_book_db(
+            &conn,
+            id,
+            "New Title",
+            Some("New Author"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         assert_eq!(book.title, "New Title");
         assert_eq!(book.author, Some("New Author".to_string()));
     }
@@ -402,7 +484,10 @@ mod tests {
     #[test]
     fn test_delete_book_cascades() {
         let conn = test_conn();
-        let id = add_book_db(&conn, "Doomed", None, None, None, None, None, None, None, None).unwrap();
+        let id = add_book_db(
+            &conn, "Doomed", None, None, None, None, None, None, None, None,
+        )
+        .unwrap();
 
         set_rating_db(&conn, id, 4).unwrap();
         set_reading_status_db(&conn, id, "reading").unwrap();
@@ -411,17 +496,29 @@ mod tests {
         delete_book_db(&conn, id).unwrap();
 
         let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM ratings WHERE book_id = ?1", [id], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM ratings WHERE book_id = ?1",
+                [id],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(count, 0);
 
         let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM reading_status WHERE book_id = ?1", [id], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM reading_status WHERE book_id = ?1",
+                [id],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(count, 0);
 
         let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM reviews WHERE book_id = ?1", [id], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM reviews WHERE book_id = ?1",
+                [id],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(count, 0);
     }
@@ -429,7 +526,10 @@ mod tests {
     #[test]
     fn test_set_rating() {
         let conn = test_conn();
-        let id = add_book_db(&conn, "Rated", None, None, None, None, None, None, None, None).unwrap();
+        let id = add_book_db(
+            &conn, "Rated", None, None, None, None, None, None, None, None,
+        )
+        .unwrap();
 
         set_rating_db(&conn, id, 3).unwrap();
         let book = get_book_db(&conn, id).unwrap();
@@ -443,7 +543,19 @@ mod tests {
     #[test]
     fn test_rating_constraint() {
         let conn = test_conn();
-        let id = add_book_db(&conn, "Bad Rating", None, None, None, None, None, None, None, None).unwrap();
+        let id = add_book_db(
+            &conn,
+            "Bad Rating",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         assert!(set_rating_db(&conn, id, 0).is_err());
         assert!(set_rating_db(&conn, id, 6).is_err());
@@ -452,7 +564,19 @@ mod tests {
     #[test]
     fn test_set_reading_status() {
         let conn = test_conn();
-        let id = add_book_db(&conn, "Status Book", None, None, None, None, None, None, None, None).unwrap();
+        let id = add_book_db(
+            &conn,
+            "Status Book",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         set_reading_status_db(&conn, id, "reading").unwrap();
         let book = get_book_db(&conn, id).unwrap();
@@ -466,7 +590,19 @@ mod tests {
     #[test]
     fn test_invalid_reading_status() {
         let conn = test_conn();
-        let id = add_book_db(&conn, "Invalid Status", None, None, None, None, None, None, None, None).unwrap();
+        let id = add_book_db(
+            &conn,
+            "Invalid Status",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         assert!(set_reading_status_db(&conn, id, "bogus").is_err());
     }
@@ -474,7 +610,10 @@ mod tests {
     #[test]
     fn test_save_review() {
         let conn = test_conn();
-        let id = add_book_db(&conn, "Reviewed", None, None, None, None, None, None, None, None).unwrap();
+        let id = add_book_db(
+            &conn, "Reviewed", None, None, None, None, None, None, None, None,
+        )
+        .unwrap();
 
         save_review_db(&conn, id, "Amazing book").unwrap();
         let book = get_book_db(&conn, id).unwrap();
@@ -488,7 +627,19 @@ mod tests {
     #[test]
     fn test_import_kindle_skips_duplicates() {
         let conn = test_conn();
-        add_book_db(&conn, "Existing Book", Some("Author"), None, None, None, None, None, None, None).unwrap();
+        add_book_db(
+            &conn,
+            "Existing Book",
+            Some("Author"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
 
         let kindle_books = vec![
             KindleBook {
@@ -514,7 +665,11 @@ mod tests {
 
         let new_book = get_book_db(&conn, ids[0]).unwrap();
         assert_eq!(new_book.title, "New Book");
-        assert_eq!(new_book.status, Some("reading".to_string()), "imported books get 'reading' status");
+        assert_eq!(
+            new_book.status,
+            Some("reading".to_string()),
+            "imported books get 'reading' status"
+        );
 
         let total: i64 = conn
             .query_row("SELECT COUNT(*) FROM books", [], |r| r.get(0))

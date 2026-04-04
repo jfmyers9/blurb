@@ -229,10 +229,7 @@ async fn google_books(isbn: &str) -> Result<BookMetadata, String> {
     Ok(BookMetadata {
         title: vol.title.clone(),
         author: vol.authors.as_ref().and_then(|a| a.first().cloned()),
-        cover_url: vol
-            .image_links
-            .as_ref()
-            .and_then(|il| il.thumbnail.clone()),
+        cover_url: vol.image_links.as_ref().and_then(|il| il.thumbnail.clone()),
         description: vol.description.clone(),
         publisher: vol.publisher.clone(),
         published_date: vol.published_date.clone(),
