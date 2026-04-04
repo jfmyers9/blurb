@@ -44,6 +44,14 @@ pub fn run() {
             commands::import_clippings,
             commands::list_highlights,
             commands::enrich_book,
+            commands::create_shelf,
+            commands::list_shelves,
+            commands::rename_shelf,
+            commands::delete_shelf,
+            commands::add_book_to_shelf,
+            commands::remove_book_from_shelf,
+            commands::list_book_shelves,
+            commands::list_shelf_book_ids,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

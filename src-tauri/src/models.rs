@@ -20,6 +20,13 @@ pub struct Book {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Shelf {
+    pub id: i64,
+    pub name: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Highlight {
     pub id: i64,
     pub book_id: i64,

@@ -50,6 +50,18 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
             UNIQUE(book_id)
         );
 
+        CREATE TABLE IF NOT EXISTS shelves(
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS book_shelves(
+            book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            shelf_id INTEGER NOT NULL REFERENCES shelves(id) ON DELETE CASCADE,
+            UNIQUE(book_id, shelf_id)
+        );
+
         CREATE TABLE IF NOT EXISTS highlights(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
