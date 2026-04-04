@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import StatusFilterBar from "./StatusFilterBar";
+import type { FilterStatus } from "./StatusFilterBar";
 import type { Book, Shelf } from "../lib/api";
 
 function makeBook(overrides: Partial<Book> = {}): Book {
@@ -26,8 +27,8 @@ function makeBook(overrides: Partial<Book> = {}): Book {
 
 const defaultProps = () => ({
   books: [] as Book[],
-  activeStatus: "all",
-  onStatusChange: vi.fn(),
+  activeStatus: "all" as FilterStatus,
+  onStatusChange: vi.fn<(status: FilterStatus) => void>(),
   sortBy: "date_added" as const,
   onSortChange: vi.fn(),
   shelves: [] as Shelf[],

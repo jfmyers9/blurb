@@ -596,10 +596,7 @@ pub fn list_highlights(state: State<AppState>, book_id: i64) -> Result<Vec<Highl
     Ok(highlights)
 }
 
-pub(crate) fn create_shelf_db(
-    conn: &rusqlite::Connection,
-    name: &str,
-) -> Result<i64, String> {
+pub(crate) fn create_shelf_db(conn: &rusqlite::Connection, name: &str) -> Result<i64, String> {
     let name = name.trim();
     if name.is_empty() {
         return Err("Shelf name cannot be empty".to_string());
@@ -612,9 +609,7 @@ pub(crate) fn create_shelf_db(
     Ok(conn.last_insert_rowid())
 }
 
-pub(crate) fn list_shelves_db(
-    conn: &rusqlite::Connection,
-) -> Result<Vec<Shelf>, String> {
+pub(crate) fn list_shelves_db(conn: &rusqlite::Connection) -> Result<Vec<Shelf>, String> {
     let mut stmt = conn
         .prepare("SELECT id, name, created_at FROM shelves ORDER BY name")
         .map_err(|e| e.to_string())?;
@@ -652,10 +647,7 @@ pub(crate) fn rename_shelf_db(
     Ok(())
 }
 
-pub(crate) fn delete_shelf_db(
-    conn: &rusqlite::Connection,
-    id: i64,
-) -> Result<(), String> {
+pub(crate) fn delete_shelf_db(conn: &rusqlite::Connection, id: i64) -> Result<(), String> {
     conn.execute("DELETE FROM shelves WHERE id = ?1", [id])
         .map_err(|e| e.to_string())?;
     if conn.changes() == 0 {
@@ -1150,7 +1142,16 @@ mod tests {
     fn test_add_book_to_shelf_and_query() {
         let conn = test_conn();
         let book_id = add_book_db(
-            &conn, "Shelf Book", None, None, None, None, None, None, None, None,
+            &conn,
+            "Shelf Book",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
         )
         .unwrap();
         let shelf_id = create_shelf_db(&conn, "Favorites").unwrap();
@@ -1169,7 +1170,16 @@ mod tests {
     fn test_remove_book_from_shelf() {
         let conn = test_conn();
         let book_id = add_book_db(
-            &conn, "Removable", None, None, None, None, None, None, None, None,
+            &conn,
+            "Removable",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
         )
         .unwrap();
         let shelf_id = create_shelf_db(&conn, "To Remove").unwrap();
@@ -1193,7 +1203,16 @@ mod tests {
     fn test_delete_book_cascades_book_shelves() {
         let conn = test_conn();
         let book_id = add_book_db(
-            &conn, "Cascade Book", None, None, None, None, None, None, None, None,
+            &conn,
+            "Cascade Book",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
         )
         .unwrap();
         let shelf_id = create_shelf_db(&conn, "Cascade Shelf").unwrap();
@@ -1271,7 +1290,16 @@ mod tests {
     fn test_add_book_to_shelf_idempotent() {
         let conn = test_conn();
         let book_id = add_book_db(
-            &conn, "Idem Book", None, None, None, None, None, None, None, None,
+            &conn,
+            "Idem Book",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
         )
         .unwrap();
         let shelf_id = create_shelf_db(&conn, "Idem Shelf").unwrap();
