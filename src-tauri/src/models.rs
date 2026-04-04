@@ -53,3 +53,18 @@ pub struct Highlight {
     pub clipped_at: Option<String>,
     pub created_at: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HighlightSearchResult {
+    pub id: i64,
+    pub book_id: i64,
+    pub text: String,
+    pub location_start: Option<i64>,
+    pub location_end: Option<i64>,
+    pub page: Option<i64>,
+    pub clip_type: String,
+    pub clipped_at: Option<String>,
+    pub created_at: String,
+    pub book_title: String,
+    pub book_author: Option<String>,
+}

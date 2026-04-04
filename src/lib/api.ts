@@ -261,6 +261,26 @@ export async function listHighlights(
   return invoke<Highlight[]>("list_highlights", { book_id });
 }
 
+export interface HighlightSearchResult {
+  id: number;
+  book_id: number;
+  text: string;
+  location_start: number | null;
+  location_end: number | null;
+  page: number | null;
+  clip_type: string;
+  clipped_at: string | null;
+  created_at: string;
+  book_title: string;
+  book_author: string | null;
+}
+
+export async function searchHighlights(
+  query: string
+): Promise<HighlightSearchResult[]> {
+  return invoke<HighlightSearchResult[]>("search_highlights", { query });
+}
+
 export interface Shelf {
   id: number;
   name: string;
