@@ -167,7 +167,6 @@ struct OLSearchDoc {
     number_of_pages_median: Option<i32>,
 }
 
-
 /// Prefer ISBN-13 (978/979 prefix), falling back to first available.
 fn prefer_isbn13(isbns: Option<Vec<String>>) -> Option<String> {
     let isbns = isbns?;
@@ -199,9 +198,7 @@ pub async fn search_covers(query: &str) -> Result<Vec<BookMetadata>, String> {
         .unwrap_or_default()
         .into_iter()
         // Dedup by `key`; docs without a key always pass through since they can't be matched.
-        .filter(|doc| {
-            doc.key.as_ref().is_none_or(|k| seen_keys.insert(k.clone()))
-        })
+        .filter(|doc| doc.key.as_ref().is_none_or(|k| seen_keys.insert(k.clone())))
         .map(|doc| BookMetadata {
             title: doc.title,
             author: doc.author_name.as_ref().and_then(|a| a.first().cloned()),
@@ -422,20 +419,32 @@ mod tests {
             OLSearchDoc {
                 title: Some("A".into()),
                 key: Some("/works/OL1".into()),
-                author_name: None, cover_i: None, isbn: None,
-                publisher: None, first_publish_year: None, number_of_pages_median: None,
+                author_name: None,
+                cover_i: None,
+                isbn: None,
+                publisher: None,
+                first_publish_year: None,
+                number_of_pages_median: None,
             },
             OLSearchDoc {
                 title: Some("A dup".into()),
                 key: Some("/works/OL1".into()),
-                author_name: None, cover_i: None, isbn: None,
-                publisher: None, first_publish_year: None, number_of_pages_median: None,
+                author_name: None,
+                cover_i: None,
+                isbn: None,
+                publisher: None,
+                first_publish_year: None,
+                number_of_pages_median: None,
             },
             OLSearchDoc {
                 title: Some("B".into()),
                 key: Some("/works/OL2".into()),
-                author_name: None, cover_i: None, isbn: None,
-                publisher: None, first_publish_year: None, number_of_pages_median: None,
+                author_name: None,
+                cover_i: None,
+                isbn: None,
+                publisher: None,
+                first_publish_year: None,
+                number_of_pages_median: None,
             },
         ];
         let mut seen = std::collections::HashSet::new();
@@ -454,14 +463,22 @@ mod tests {
             OLSearchDoc {
                 title: Some("No key 1".into()),
                 key: None,
-                author_name: None, cover_i: None, isbn: None,
-                publisher: None, first_publish_year: None, number_of_pages_median: None,
+                author_name: None,
+                cover_i: None,
+                isbn: None,
+                publisher: None,
+                first_publish_year: None,
+                number_of_pages_median: None,
             },
             OLSearchDoc {
                 title: Some("No key 2".into()),
                 key: None,
-                author_name: None, cover_i: None, isbn: None,
-                publisher: None, first_publish_year: None, number_of_pages_median: None,
+                author_name: None,
+                cover_i: None,
+                isbn: None,
+                publisher: None,
+                first_publish_year: None,
+                number_of_pages_median: None,
             },
         ];
         let mut seen = std::collections::HashSet::new();
@@ -499,7 +516,9 @@ mod tests {
         let meta = BookMetadata {
             title: doc.title,
             author: doc.author_name.as_ref().and_then(|a| a.first().cloned()),
-            cover_url: doc.cover_i.map(|id| format!("https://covers.openlibrary.org/b/id/{}-L.jpg", id)),
+            cover_url: doc
+                .cover_i
+                .map(|id| format!("https://covers.openlibrary.org/b/id/{}-L.jpg", id)),
             description: None,
             publisher: doc.publisher.and_then(|p| p.into_iter().next()),
             published_date: doc.first_publish_year.map(|y| y.to_string()),
@@ -509,7 +528,10 @@ mod tests {
 
         assert_eq!(meta.title.as_deref(), Some("Great Expectations"));
         assert_eq!(meta.author.as_deref(), Some("Charles Dickens"));
-        assert_eq!(meta.cover_url.as_deref(), Some("https://covers.openlibrary.org/b/id/12345-L.jpg"));
+        assert_eq!(
+            meta.cover_url.as_deref(),
+            Some("https://covers.openlibrary.org/b/id/12345-L.jpg")
+        );
         assert_eq!(meta.publisher.as_deref(), Some("Penguin"));
         assert_eq!(meta.published_date.as_deref(), Some("1861"));
         assert_eq!(meta.page_count, Some(544));
