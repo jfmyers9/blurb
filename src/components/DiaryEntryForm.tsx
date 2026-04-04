@@ -59,7 +59,7 @@ export default function DiaryEntryForm({
         dirtyRef.current = false;
         setSaveStatus("saved");
         onSave();
-        savedTimerRef.current = setTimeout(() => setSaveStatus("idle"), 1500);
+        savedTimerRef.current = setTimeout(() => setSaveStatus("idle"), 4000);
       } catch {
         setSaveStatus("idle");
       }
@@ -111,12 +111,35 @@ export default function DiaryEntryForm({
         Placeholder.configure({ placeholder: "Write your thoughts..." }),
       ],
       content: initialContent,
+      autofocus: "end",
       onUpdate: ({ editor: e }) => {
         scheduleSave(JSON.stringify(e.getJSON()));
       },
     },
     []
   );
+
+  // Escape to close (flush pending save)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (timerRef.current) clearTimeout(timerRef.current);
+        if (dirtyRef.current) {
+          const body = editorContentRef.current;
+          if (entryIdRef.current != null) {
+            updateDiaryEntry(entryIdRef.current, body, ratingRef.current, entryDateRef.current).catch(() => {});
+          } else {
+            createDiaryEntry(bookId, body, ratingRef.current, entryDateRef.current).catch(() => {});
+          }
+          dirtyRef.current = false;
+          onSave();
+        }
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [bookId, onClose, onSave]);
 
   const handleRatingChange = (score: number) => {
     const newRating = score === rating ? null : score;
@@ -161,10 +184,10 @@ export default function DiaryEntryForm({
           />
         </div>
 
-        <div className="w-16 text-right text-xs text-gray-400">
-          {saveStatus === "saving" && "Saving..."}
+        <div className="w-20 text-right text-sm text-gray-400">
+          {saveStatus === "saving" && "Saving\u2026"}
           {saveStatus === "saved" && (
-            <span className="text-green-600 dark:text-green-400">Saved</span>
+            <span className="text-green-600 dark:text-green-400">&check; Saved</span>
           )}
         </div>
       </div>
@@ -194,7 +217,7 @@ function Toolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
   const buttons = [
     {
       key: "bold",
-      title: "Bold",
+      title: "Bold (Ctrl+B)",
       command: () => editor.chain().focus().toggleBold().run(),
       active: editor.isActive("bold"),
       icon: (
@@ -206,7 +229,7 @@ function Toolbar({ editor }: { editor: ReturnType<typeof useEditor> }) {
     },
     {
       key: "italic",
-      title: "Italic",
+      title: "Italic (Ctrl+I)",
       command: () => editor.chain().focus().toggleItalic().run(),
       active: editor.isActive("italic"),
       icon: (
