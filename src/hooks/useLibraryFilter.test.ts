@@ -42,11 +42,11 @@ const shelfBookIdsMap: Record<number, number[]> = {
 };
 
 beforeEach(() => {
+  const store: Record<string, string> = {};
   vi.stubGlobal("localStorage", {
-    _store: {} as Record<string, string>,
-    getItem(key: string) { return this._store[key] ?? null; },
-    setItem(key: string, value: string) { this._store[key] = value; },
-    removeItem(key: string) { delete this._store[key]; },
+    getItem(key: string) { return store[key] ?? null; },
+    setItem(key: string, value: string) { store[key] = value; },
+    removeItem(key: string) { delete store[key]; },
   });
 });
 
