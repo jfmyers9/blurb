@@ -58,6 +58,7 @@ pub fn run() {
             commands::list_book_shelves,
             commands::list_shelf_book_ids,
             commands::list_all_shelf_book_ids,
+            commands::search_highlights,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

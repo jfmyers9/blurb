@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import "./App.css";
 import {
   listBooks,
@@ -18,6 +18,7 @@ import {
   listAllShelfBookIds,
 } from "./lib/api";
 import type { Book, Shelf } from "./lib/api";
+import { createCommands } from "./lib/commands";
 import LibraryGrid from "./components/LibraryGrid";
 import LibraryList from "./components/LibraryList";
 import BookDetail from "./components/BookDetail";
@@ -25,8 +26,10 @@ import AddBookForm from "./components/AddBookForm";
 import KindleSync from "./components/KindleSync";
 import DiaryFeed from "./components/DiaryFeed";
 import DiaryEntryForm from "./components/DiaryEntryForm";
+import CommandPalette from "./components/CommandPalette";
 import StatusFilterBar from "./components/StatusFilterBar";
 import { useLibraryFilter } from "./hooks/useLibraryFilter";
+import { useCommandPalette } from "./hooks/useCommandPalette";
 
 function App() {
   const [books, setBooks] = useState<Book[]>([]);
@@ -40,6 +43,7 @@ function App() {
   const [diaryPromptBookId, setDiaryPromptBookId] = useState<number | null>(null);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const commandPalette = useCommandPalette();
 
   const {
     searchQuery, setSearchQuery,
@@ -50,6 +54,18 @@ function App() {
     minRating, setMinRating,
     filteredBooks,
   } = useLibraryFilter(books, shelves, shelfBookIdsMap);
+
+  const paletteCommands = useMemo(
+    () =>
+      createCommands({
+        addBook: () => setShowAddForm(true),
+        switchToLibrary: () => setView("library"),
+        switchToDiary: () => setView("diary"),
+        toggleViewMode: () => changeViewMode(viewMode === "grid" ? "list" : "grid"),
+        openKindleSync: () => setShowKindle(true),
+      }),
+    [changeViewMode, viewMode]
+  );
 
   const refresh = useCallback(async () => {
     const data = await listBooks();
@@ -80,12 +96,16 @@ function App() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && selectedBook) {
+      if (e.key === "Escape") {
         e.preventDefault();
-        setSelectedBook(null);
+        if (commandPalette.isOpen) {
+          commandPalette.close();
+        } else if (selectedBook) {
+          setSelectedBook(null);
+        }
         return;
       }
-      if (e.key === "/") {
+      if (e.key === "/" && !commandPalette.isOpen) {
         const el = document.activeElement;
         if (el instanceof HTMLElement) {
           if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;
@@ -96,7 +116,7 @@ function App() {
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [selectedBook]);
+  }, [selectedBook, commandPalette.isOpen, commandPalette.close]);
 
   const handleAdd = async (data: {
     title: string;
@@ -307,6 +327,16 @@ function App() {
         <div className="flex items-center gap-2">
           <button
             type="button"
+            onClick={commandPalette.open}
+            className="flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1
+              text-xs text-gray-400 transition hover:border-gray-300 hover:text-gray-600
+              dark:border-gray-700 dark:hover:border-gray-600 dark:hover:text-gray-300"
+            title="Command palette"
+          >
+            <kbd className="font-sans">&#8984;K</kbd>
+          </button>
+          <button
+            type="button"
             onClick={() => setShowKindle(true)}
             className="flex h-9 w-9 items-center justify-center rounded-full
               text-gray-400 transition hover:bg-gray-100 hover:text-gray-700
@@ -435,6 +465,18 @@ function App() {
         open={showAddForm}
         onClose={() => setShowAddForm(false)}
         onAdd={handleAdd}
+      />
+
+      {/* Command palette */}
+      <CommandPalette
+        isOpen={commandPalette.isOpen}
+        onClose={commandPalette.close}
+        books={books}
+        commands={paletteCommands}
+        onSelectBook={(book) => {
+          setSelectedBook(book);
+          setView("library");
+        }}
       />
 
       {/* Diary entry prompt after finishing a book */}

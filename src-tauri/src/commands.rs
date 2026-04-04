@@ -1,6 +1,6 @@
 use crate::kindle::KindleBook;
 use crate::metadata::BookMetadata;
-use crate::models::{Book, DiaryEntry, Highlight, Shelf};
+use crate::models::{Book, DiaryEntry, Highlight, HighlightSearchResult, Shelf};
 use crate::AppState;
 use std::fs;
 use std::path::Path;
@@ -732,6 +732,49 @@ pub fn list_highlights(state: State<AppState>, book_id: i64) -> Result<Vec<Highl
         .map_err(|e| e.to_string())?;
 
     Ok(highlights)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn search_highlights(
+    state: State<AppState>,
+    query: String,
+) -> Result<Vec<HighlightSearchResult>, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let escaped = query
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    let mut stmt = db
+        .prepare(
+            "SELECT h.id, h.book_id, h.text, h.location_start, h.location_end, h.page, \
+             h.clip_type, h.clipped_at, h.created_at, b.title, b.author \
+             FROM highlights h JOIN books b ON h.book_id = b.id \
+             WHERE h.text LIKE '%' || ?1 || '%' ESCAPE '\\' \
+             ORDER BY h.clipped_at DESC LIMIT 20",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let results = stmt
+        .query_map([&escaped], |row| {
+            Ok(HighlightSearchResult {
+                id: row.get(0)?,
+                book_id: row.get(1)?,
+                text: row.get(2)?,
+                location_start: row.get(3)?,
+                location_end: row.get(4)?,
+                page: row.get(5)?,
+                clip_type: row.get(6)?,
+                clipped_at: row.get(7)?,
+                created_at: row.get(8)?,
+                book_title: row.get(9)?,
+                book_author: row.get(10)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(results)
 }
 
 pub(crate) fn create_shelf_db(conn: &rusqlite::Connection, name: &str) -> Result<i64, String> {
