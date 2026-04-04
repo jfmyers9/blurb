@@ -272,18 +272,16 @@ async fn search_by_title_open_library(
     })
 }
 
-async fn search_by_title_google(
-    title: &str,
-    author: Option<&str>,
-) -> Result<BookMetadata, String> {
+async fn search_by_title_google(title: &str, author: Option<&str>) -> Result<BookMetadata, String> {
     let query = match author {
-        Some(a) => format!("intitle:{}+inauthor:{}", urlencoding::encode(title), urlencoding::encode(a)),
+        Some(a) => format!(
+            "intitle:{}+inauthor:{}",
+            urlencoding::encode(title),
+            urlencoding::encode(a)
+        ),
         None => format!("intitle:{}", urlencoding::encode(title)),
     };
-    let url = format!(
-        "https://www.googleapis.com/books/v1/volumes?q={}",
-        query
-    );
+    let url = format!("https://www.googleapis.com/books/v1/volumes?q={}", query);
     let client = HTTP_CLIENT.clone();
     let resp: GoogleBooksResponse = client
         .get(&url)
@@ -301,22 +299,16 @@ async fn search_by_title_google(
         .map(|item| &item.volume_info)
         .ok_or("No results from Google Books")?;
 
-    let isbn = vol
-        .industry_identifiers
-        .as_ref()
-        .and_then(|ids| {
-            ids.iter()
-                .find(|id| id.id_type == "ISBN_13" || id.id_type == "ISBN_10")
-                .map(|id| id.identifier.clone())
-        });
+    let isbn = vol.industry_identifiers.as_ref().and_then(|ids| {
+        ids.iter()
+            .find(|id| id.id_type == "ISBN_13" || id.id_type == "ISBN_10")
+            .map(|id| id.identifier.clone())
+    });
 
     Ok(BookMetadata {
         title: vol.title.clone(),
         author: vol.authors.as_ref().and_then(|a| a.first().cloned()),
-        cover_url: vol
-            .image_links
-            .as_ref()
-            .and_then(|il| il.thumbnail.clone()),
+        cover_url: vol.image_links.as_ref().and_then(|il| il.thumbnail.clone()),
         description: vol.description.clone(),
         publisher: vol.publisher.clone(),
         published_date: vol.published_date.clone(),
@@ -347,22 +339,16 @@ async fn google_books(isbn: &str) -> Result<BookMetadata, String> {
         .map(|item| &item.volume_info)
         .ok_or("ISBN not found on Google Books")?;
 
-    let isbn = vol
-        .industry_identifiers
-        .as_ref()
-        .and_then(|ids| {
-            ids.iter()
-                .find(|id| id.id_type == "ISBN_13" || id.id_type == "ISBN_10")
-                .map(|id| id.identifier.clone())
-        });
+    let isbn = vol.industry_identifiers.as_ref().and_then(|ids| {
+        ids.iter()
+            .find(|id| id.id_type == "ISBN_13" || id.id_type == "ISBN_10")
+            .map(|id| id.identifier.clone())
+    });
 
     Ok(BookMetadata {
         title: vol.title.clone(),
         author: vol.authors.as_ref().and_then(|a| a.first().cloned()),
-        cover_url: vol
-            .image_links
-            .as_ref()
-            .and_then(|il| il.thumbnail.clone()),
+        cover_url: vol.image_links.as_ref().and_then(|il| il.thumbnail.clone()),
         description: vol.description.clone(),
         publisher: vol.publisher.clone(),
         published_date: vol.published_date.clone(),

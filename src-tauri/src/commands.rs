@@ -1,8 +1,8 @@
-use base64::Engine;
 use crate::kindle::KindleBook;
 use crate::metadata::BookMetadata;
 use crate::models::{Book, Highlight};
 use crate::AppState;
+use base64::Engine;
 use std::fs;
 use std::path::Path;
 use tauri::Manager;
@@ -392,7 +392,11 @@ fn find_clippings_file(mount_path: &str) -> Option<std::path::PathBuf> {
     let docs_dir = crate::kindle::find_documents_dir(Path::new(mount_path))?;
     if let Ok(entries) = fs::read_dir(&docs_dir) {
         for entry in entries.flatten() {
-            if entry.file_name().to_string_lossy().eq_ignore_ascii_case("My Clippings.txt") {
+            if entry
+                .file_name()
+                .to_string_lossy()
+                .eq_ignore_ascii_case("My Clippings.txt")
+            {
                 return Some(entry.path());
             }
         }
@@ -527,11 +531,31 @@ pub async fn enrich_book(state: State<'_, AppState>, book_id: i64) -> Result<(),
          updated_at = datetime('now') WHERE id = ?7",
         rusqlite::params![
             if isbn.is_none() { meta.isbn } else { isbn },
-            if cover_url.is_none() { meta.cover_url } else { cover_url },
-            if description.is_none() { meta.description } else { description },
-            if publisher.is_none() { meta.publisher } else { publisher },
-            if published_date.is_none() { meta.published_date } else { published_date },
-            if page_count.is_none() { meta.page_count } else { page_count },
+            if cover_url.is_none() {
+                meta.cover_url
+            } else {
+                cover_url
+            },
+            if description.is_none() {
+                meta.description
+            } else {
+                description
+            },
+            if publisher.is_none() {
+                meta.publisher
+            } else {
+                publisher
+            },
+            if published_date.is_none() {
+                meta.published_date
+            } else {
+                published_date
+            },
+            if page_count.is_none() {
+                meta.page_count
+            } else {
+                page_count
+            },
             book_id,
         ],
     )
@@ -899,13 +923,18 @@ mod tests {
             [],
             |row| row.get(0),
         ).unwrap();
-        assert!(exists, "Dedup check should detect existing NULL-location highlight");
+        assert!(
+            exists,
+            "Dedup check should detect existing NULL-location highlight"
+        );
 
-        let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM highlights WHERE book_id = 1 AND text = 'some text'",
-            [],
-            |row| row.get(0),
-        ).unwrap();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM highlights WHERE book_id = 1 AND text = 'some text'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(count, 1);
     }
 }

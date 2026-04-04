@@ -119,7 +119,11 @@ fn read_mobi_metadata(path: &Path) -> Option<MobiFields> {
 
     let title = {
         let t = exth_string(exth, ExthRecord::Title).unwrap_or_else(|| m.title());
-        if t.is_empty() { None } else { Some(t) }
+        if t.is_empty() {
+            None
+        } else {
+            Some(t)
+        }
     };
 
     let author = exth_string(exth, ExthRecord::Author).or_else(|| m.author());
@@ -128,11 +132,14 @@ fn read_mobi_metadata(path: &Path) -> Option<MobiFields> {
     let publisher = exth_string(exth, ExthRecord::Publisher).or_else(|| m.publisher());
     let description = exth_string(exth, ExthRecord::Description).or_else(|| m.description());
     let published_date = exth_string(exth, ExthRecord::PublishDate).or_else(|| m.publish_date());
-    let language = exth_string(exth, ExthRecord::Language)
-        .or_else(|| {
-            let lang = format!("{:?}", m.language());
-            if lang == "Unknown" { None } else { Some(lang) }
-        });
+    let language = exth_string(exth, ExthRecord::Language).or_else(|| {
+        let lang = format!("{:?}", m.language());
+        if lang == "Unknown" {
+            None
+        } else {
+            Some(lang)
+        }
+    });
     let cde_type = exth_string(exth, ExthRecord::Cdetype);
 
     // Extract cover image via CoverOffset EXTH record
@@ -252,25 +259,37 @@ fn scan_dir(dir: &Path, books: &mut Vec<KindleBook>) {
             None
         };
 
-        let (title, author, asin, isbn, publisher, description, published_date, language, cover_data, cde_type) =
-            if let Some(meta) = mobi_meta {
-                let (fallback_title, fallback_author, fallback_asin) = parse_kindle_filename(&stem);
-                (
-                    meta.title.unwrap_or(fallback_title),
-                    meta.author.or(fallback_author),
-                    meta.asin.or(fallback_asin),
-                    meta.isbn,
-                    meta.publisher,
-                    meta.description,
-                    meta.published_date,
-                    meta.language,
-                    meta.cover_data,
-                    meta.cde_type,
-                )
-            } else {
-                let (title, author, asin) = parse_kindle_filename(&stem);
-                (title, author, asin, None, None, None, None, None, None, None)
-            };
+        let (
+            title,
+            author,
+            asin,
+            isbn,
+            publisher,
+            description,
+            published_date,
+            language,
+            cover_data,
+            cde_type,
+        ) = if let Some(meta) = mobi_meta {
+            let (fallback_title, fallback_author, fallback_asin) = parse_kindle_filename(&stem);
+            (
+                meta.title.unwrap_or(fallback_title),
+                meta.author.or(fallback_author),
+                meta.asin.or(fallback_asin),
+                meta.isbn,
+                meta.publisher,
+                meta.description,
+                meta.published_date,
+                meta.language,
+                meta.cover_data,
+                meta.cde_type,
+            )
+        } else {
+            let (title, author, asin) = parse_kindle_filename(&stem);
+            (
+                title, author, asin, None, None, None, None, None, None, None,
+            )
+        };
 
         books.push(KindleBook {
             filename,
@@ -335,7 +354,11 @@ fn parse_kindle_filename(stem: &str) -> (String, Option<String>, Option<String>)
 
     // Replace underscores with spaces for readability
     let cleaned = stem.replace('_', " ");
-    (cleaned.trim().to_string(), None, asin.map(|s| s.to_string()))
+    (
+        cleaned.trim().to_string(),
+        None,
+        asin.map(|s| s.to_string()),
+    )
 }
 
 #[cfg(test)]
@@ -344,12 +367,18 @@ mod tests {
 
     #[test]
     fn strip_asin_underscore() {
-        assert_eq!(strip_asin_suffix("Title_B0ABCDEFGH"), ("Title", Some("B0ABCDEFGH")));
+        assert_eq!(
+            strip_asin_suffix("Title_B0ABCDEFGH"),
+            ("Title", Some("B0ABCDEFGH"))
+        );
     }
 
     #[test]
     fn strip_asin_parens() {
-        assert_eq!(strip_asin_suffix("Title (B0ABCDEFGH)"), ("Title", Some("B0ABCDEFGH")));
+        assert_eq!(
+            strip_asin_suffix("Title (B0ABCDEFGH)"),
+            ("Title", Some("B0ABCDEFGH"))
+        );
     }
 
     #[test]

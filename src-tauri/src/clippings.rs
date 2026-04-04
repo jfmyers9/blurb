@@ -74,7 +74,13 @@ fn parse_title_author(line: &str) -> (String, Option<String>) {
 
 fn parse_metadata(
     line: &str,
-) -> Option<(String, Option<i64>, Option<i64>, Option<i64>, Option<String>)> {
+) -> Option<(
+    String,
+    Option<i64>,
+    Option<i64>,
+    Option<i64>,
+    Option<String>,
+)> {
     let line = line.trim().trim_start_matches("- ");
 
     let clip_type = if line.starts_with("Your Highlight") {
@@ -95,7 +101,10 @@ fn parse_metadata(
     // Extract location: "on Location 234-238" or "on Location 50"
     if let Some(loc_idx) = line.find("Location ") {
         let after = &line[loc_idx + 9..];
-        let loc_str: String = after.chars().take_while(|c| c.is_ascii_digit() || *c == '-').collect();
+        let loc_str: String = after
+            .chars()
+            .take_while(|c| c.is_ascii_digit() || *c == '-')
+            .collect();
         if let Some(dash) = loc_str.find('-') {
             location_start = loc_str[..dash].parse().ok();
             location_end = loc_str[dash + 1..].parse().ok();
@@ -253,7 +262,11 @@ This reminds me of modern surveillance
         let clippings = parse_clippings(&format!("{}\n==========", block));
         assert_eq!(clippings.len(), 1);
         assert!(
-            clippings[0].clipped_at.as_ref().unwrap().contains("T00:00:00"),
+            clippings[0]
+                .clipped_at
+                .as_ref()
+                .unwrap()
+                .contains("T00:00:00"),
             "12:00:00 AM should map to hour 0, got: {}",
             clippings[0].clipped_at.as_ref().unwrap()
         );
@@ -265,7 +278,11 @@ This reminds me of modern surveillance
         let clippings = parse_clippings(&format!("{}\n==========", block));
         assert_eq!(clippings.len(), 1);
         assert!(
-            clippings[0].clipped_at.as_ref().unwrap().contains("T12:30:00"),
+            clippings[0]
+                .clipped_at
+                .as_ref()
+                .unwrap()
+                .contains("T12:30:00"),
             "12:30:00 PM should stay hour 12, got: {}",
             clippings[0].clipped_at.as_ref().unwrap()
         );
