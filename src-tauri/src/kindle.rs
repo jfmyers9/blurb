@@ -182,3 +182,66 @@ fn parse_kindle_filename(stem: &str) -> (String, Option<String>) {
     let cleaned = stem.replace('_', " ");
     (cleaned.trim().to_string(), None)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strip_asin_underscore() {
+        assert_eq!(strip_asin_suffix("Title_B0ABCDEFGH"), "Title");
+    }
+
+    #[test]
+    fn strip_asin_parens() {
+        assert_eq!(strip_asin_suffix("Title (B0ABCDEFGH)"), "Title");
+    }
+
+    #[test]
+    fn strip_ebok() {
+        assert_eq!(strip_asin_suffix("Title_EBOK"), "Title");
+    }
+
+    #[test]
+    fn strip_pdoc() {
+        assert_eq!(strip_asin_suffix("Title_PDOC"), "Title");
+    }
+
+    #[test]
+    fn strip_ebsp() {
+        assert_eq!(strip_asin_suffix("Title_EBSP"), "Title");
+    }
+
+    #[test]
+    fn strip_no_match() {
+        assert_eq!(strip_asin_suffix("Title"), "Title");
+    }
+
+    #[test]
+    fn parse_title_and_author() {
+        let (title, author) = parse_kindle_filename("The Great Gatsby - F Scott Fitzgerald");
+        assert_eq!(title, "The Great Gatsby");
+        assert_eq!(author, Some("F Scott Fitzgerald".to_string()));
+    }
+
+    #[test]
+    fn parse_underscores_no_author() {
+        let (title, author) = parse_kindle_filename("Some_Book_Title");
+        assert_eq!(title, "Some Book Title");
+        assert_eq!(author, None);
+    }
+
+    #[test]
+    fn parse_empty_author() {
+        let (title, author) = parse_kindle_filename("Title - ");
+        assert_eq!(title, "Title");
+        assert_eq!(author, None);
+    }
+
+    #[test]
+    fn parse_strips_asin_from_both() {
+        let (title, author) = parse_kindle_filename("My Book - Author_B0ABCDEFGH");
+        assert_eq!(title, "My Book");
+        assert_eq!(author, Some("Author".to_string()));
+    }
+}

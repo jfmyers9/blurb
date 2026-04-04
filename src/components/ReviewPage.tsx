@@ -4,6 +4,7 @@ import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import { getBook, saveReview, type Book } from "../lib/api";
 import { coverSrc } from "../lib/cover";
+import { parseReviewContent } from "../lib/reviewParser";
 
 interface ReviewPageProps {
   bookId: number;
@@ -12,33 +13,6 @@ interface ReviewPageProps {
 }
 
 type SaveStatus = "idle" | "saving" | "saved";
-
-function parsePlainTextToDoc(text: string) {
-  const paragraphs = text.split(/\n\n+/);
-  return {
-    type: "doc" as const,
-    content: paragraphs.map((p) => ({
-      type: "paragraph" as const,
-      content: p.split(/\n/).flatMap((line, i, arr) => {
-        const nodes: Array<{ type: string; text?: string }> = [];
-        if (line) nodes.push({ type: "text", text: line });
-        if (i < arr.length - 1) nodes.push({ type: "hardBreak" });
-        return nodes;
-      }),
-    })),
-  };
-}
-
-function parseReviewContent(review: string | null) {
-  if (!review) return undefined;
-  try {
-    const parsed = JSON.parse(review);
-    if (parsed?.type === "doc") return parsed;
-  } catch {
-    // plain text fallback
-  }
-  return parsePlainTextToDoc(review);
-}
 
 export default function ReviewPage({ bookId, onClose, onSave }: ReviewPageProps) {
   const [book, setBook] = useState<Book | null>(null);
