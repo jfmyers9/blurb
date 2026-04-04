@@ -614,7 +614,11 @@ fn test_finished_sets_finished_at_preserves_started_at() {
 
     set_reading_status_db(&conn, id, "finished", None, None).unwrap();
     let (started, finished) = get_reading_dates(&conn, id);
-    assert_eq!(started, Some("2025-01-15".to_string()), "started_at preserved");
+    assert_eq!(
+        started,
+        Some("2025-01-15".to_string()),
+        "started_at preserved"
+    );
     assert!(finished.is_some(), "finished should set finished_at");
 }
 
@@ -632,7 +636,11 @@ fn test_finished_to_reading_resets_dates() {
     set_reading_status_db(&conn, id, "reading", None, None).unwrap();
     let (started, finished) = get_reading_dates(&conn, id);
     assert!(started.is_some(), "re-reading should set new started_at");
-    assert_ne!(started, Some("2025-01-01".to_string()), "started_at should be fresh");
+    assert_ne!(
+        started,
+        Some("2025-01-01".to_string()),
+        "started_at should be fresh"
+    );
     assert_eq!(finished, None, "finished_at cleared on re-read");
 }
 
@@ -722,7 +730,11 @@ fn test_abandoned_sets_finished_at() {
     set_reading_status_db(&conn, id, "abandoned", None, None).unwrap();
 
     let (started, finished) = get_reading_dates(&conn, id);
-    assert_eq!(started, Some("2025-01-01".to_string()), "started_at preserved");
+    assert_eq!(
+        started,
+        Some("2025-01-01".to_string()),
+        "started_at preserved"
+    );
     assert!(finished.is_some(), "abandoned should auto-set finished_at");
 }
 
@@ -738,8 +750,14 @@ fn test_book_dates_via_get_book_db() {
     set_reading_status_db(&conn, id, "finished", None, None).unwrap();
 
     let book = get_book_db(&conn, id).unwrap();
-    assert!(book.started_at.is_some(), "started_at visible through get_book_db");
-    assert!(book.finished_at.is_some(), "finished_at visible through get_book_db");
+    assert!(
+        book.started_at.is_some(),
+        "started_at visible through get_book_db"
+    );
+    assert!(
+        book.finished_at.is_some(),
+        "finished_at visible through get_book_db"
+    );
 }
 
 #[test]
@@ -766,7 +784,14 @@ fn test_simultaneous_date_override() {
     .unwrap();
 
     set_reading_status_db(&conn, id, "reading", None, None).unwrap();
-    set_reading_status_db(&conn, id, "finished", Some("2024-01-01"), Some("2024-12-31")).unwrap();
+    set_reading_status_db(
+        &conn,
+        id,
+        "finished",
+        Some("2024-01-01"),
+        Some("2024-12-31"),
+    )
+    .unwrap();
 
     let (started, finished) = get_reading_dates(&conn, id);
     assert_eq!(started, Some("2024-01-01".to_string()));
@@ -791,8 +816,14 @@ fn test_update_reading_dates_clears_dates() {
     update_reading_dates_db(&conn, id, None, None).unwrap();
 
     let (started, finished) = get_reading_dates(&conn, id);
-    assert_eq!(started, None, "update_reading_dates_db should clear started_at");
-    assert_eq!(finished, None, "update_reading_dates_db should clear finished_at");
+    assert_eq!(
+        started, None,
+        "update_reading_dates_db should clear started_at"
+    );
+    assert_eq!(
+        finished, None,
+        "update_reading_dates_db should clear finished_at"
+    );
 }
 
 #[test]
@@ -813,5 +844,9 @@ fn test_update_reading_dates_sets_independently() {
     update_reading_dates_db(&conn, id, None, Some("2020-06-20")).unwrap();
     let (started, finished) = get_reading_dates(&conn, id);
     assert_eq!(started, None, "started_at cleared independently");
-    assert_eq!(finished, Some("2020-06-20".to_string()), "finished_at preserved");
+    assert_eq!(
+        finished,
+        Some("2020-06-20".to_string()),
+        "finished_at preserved"
+    );
 }
