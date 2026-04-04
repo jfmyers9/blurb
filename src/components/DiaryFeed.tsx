@@ -47,7 +47,6 @@ export default function DiaryFeed({ onSelectBook }: DiaryFeedProps) {
     setLoading(true);
     try {
       const data = await listDiaryEntries();
-      data.sort((a, b) => b.entry_date.localeCompare(a.entry_date));
       setEntries(data);
     } finally {
       setLoading(false);

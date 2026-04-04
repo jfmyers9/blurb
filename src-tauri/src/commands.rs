@@ -851,6 +851,15 @@ pub(crate) fn create_diary_entry_db(
             return Err(format!("Rating must be between 1 and 5, got {r}"));
         }
     }
+    if entry_date.len() != 10
+        || entry_date.as_bytes().get(4) != Some(&b'-')
+        || entry_date.as_bytes().get(7) != Some(&b'-')
+        || !entry_date[..4].chars().all(|c| c.is_ascii_digit())
+        || !entry_date[5..7].chars().all(|c| c.is_ascii_digit())
+        || !entry_date[8..].chars().all(|c| c.is_ascii_digit())
+    {
+        return Err(format!("Invalid date format: {entry_date}, expected YYYY-MM-DD"));
+    }
     conn.execute(
         "INSERT INTO diary_entries (book_id, body, rating, entry_date, created_at, updated_at) \
          VALUES (?1, ?2, ?3, ?4, datetime('now'), datetime('now'))",
@@ -876,6 +885,15 @@ pub(crate) fn update_diary_entry_db(
         if !(1..=5).contains(&r) {
             return Err(format!("Rating must be between 1 and 5, got {r}"));
         }
+    }
+    if entry_date.len() != 10
+        || entry_date.as_bytes().get(4) != Some(&b'-')
+        || entry_date.as_bytes().get(7) != Some(&b'-')
+        || !entry_date[..4].chars().all(|c| c.is_ascii_digit())
+        || !entry_date[5..7].chars().all(|c| c.is_ascii_digit())
+        || !entry_date[8..].chars().all(|c| c.is_ascii_digit())
+    {
+        return Err(format!("Invalid date format: {entry_date}, expected YYYY-MM-DD"));
     }
     conn.execute(
         "UPDATE diary_entries SET body = ?1, rating = ?2, entry_date = ?3, \

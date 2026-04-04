@@ -546,6 +546,7 @@ export default function BookDetail({
                         <button
                           type="button"
                           onClick={async () => {
+                            if (!window.confirm("Delete this diary entry?")) return;
                             await deleteDiaryEntry(entry.id);
                             refreshDiaryEntries();
                           }}

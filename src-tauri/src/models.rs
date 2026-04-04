@@ -24,7 +24,7 @@ pub struct Book {
 pub struct DiaryEntry {
     pub id: i64,
     pub book_id: i64,
-    pub book_title: Option<String>,
+    pub book_title: String,
     pub book_author: Option<String>,
     pub book_cover_url: Option<String>,
     pub body: Option<String>,

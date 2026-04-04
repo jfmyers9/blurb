@@ -52,9 +52,9 @@ export default function DiaryEntryForm({
         if (entryIdRef.current != null) {
           await updateDiaryEntry(entryIdRef.current, body, ratingRef.current, entryDateRef.current);
         } else {
-          const id = await createDiaryEntry(bookId, body, ratingRef.current, entryDateRef.current);
-          setEntryId(id);
-          entryIdRef.current = id;
+          const created = await createDiaryEntry(bookId, body, ratingRef.current, entryDateRef.current);
+          setEntryId(created.id);
+          entryIdRef.current = created.id;
         }
         dirtyRef.current = false;
         setSaveStatus("saved");
@@ -84,9 +84,9 @@ export default function DiaryEntryForm({
       if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
       if (dirtyRef.current) {
         if (entryIdRef.current != null) {
-          updateDiaryEntry(entryIdRef.current, editorContentRef.current, ratingRef.current, entryDateRef.current);
+          updateDiaryEntry(entryIdRef.current, editorContentRef.current, ratingRef.current, entryDateRef.current).catch(() => {});
         } else {
-          createDiaryEntry(bookId, editorContentRef.current, ratingRef.current, entryDateRef.current);
+          createDiaryEntry(bookId, editorContentRef.current, ratingRef.current, entryDateRef.current).catch(() => {});
         }
         onSave();
       }

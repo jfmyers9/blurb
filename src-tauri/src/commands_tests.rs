@@ -853,7 +853,7 @@ fn test_create_diary_entry() {
     assert_eq!(entry.body, Some("Great read today".to_string()));
     assert_eq!(entry.rating, Some(4));
     assert_eq!(entry.entry_date, "2026-04-01");
-    assert_eq!(entry.book_title, Some("Diary Book".to_string()));
+    assert_eq!(entry.book_title, "Diary Book");
     assert_eq!(entry.book_author, Some("Author".to_string()));
 }
 
@@ -950,4 +950,68 @@ fn test_delete_book_cascades_diary_entries() {
         )
         .unwrap();
     assert_eq!(count, 0);
+}
+
+#[test]
+fn test_reading_status_dates() {
+    let conn = test_conn();
+    let id = add_book_db(&conn, "Dated", None, None, None, None, None, None, None, None).unwrap();
+
+    // Set to "reading" → started_at should be set
+    set_reading_status_db(&conn, id, "reading").unwrap();
+    let row: (Option<String>, Option<String>) = conn
+        .query_row(
+            "SELECT started_at, finished_at FROM reading_status WHERE book_id = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert!(row.0.is_some(), "started_at should be set");
+    assert!(row.1.is_none(), "finished_at should be None");
+    let original_started = row.0.unwrap();
+
+    // Set to "finished" → finished_at set, started_at preserved
+    set_reading_status_db(&conn, id, "finished").unwrap();
+    let row: (Option<String>, Option<String>) = conn
+        .query_row(
+            "SELECT started_at, finished_at FROM reading_status WHERE book_id = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(row.0.as_deref(), Some(original_started.as_str()), "started_at preserved");
+    assert!(row.1.is_some(), "finished_at should be set");
+
+    // Set back to "reading" → finished_at cleared
+    set_reading_status_db(&conn, id, "reading").unwrap();
+    let row: (Option<String>, Option<String>) = conn
+        .query_row(
+            "SELECT started_at, finished_at FROM reading_status WHERE book_id = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert!(row.0.is_some(), "started_at should still be set");
+    assert!(row.1.is_none(), "finished_at should be cleared");
+}
+
+#[test]
+fn test_update_diary_entry_rating_validation() {
+    let conn = test_conn();
+    let book_id = add_book_db(&conn, "Book", None, None, None, None, None, None, None, None).unwrap();
+    let entry = create_diary_entry_db(&conn, book_id, None, Some(3), "2026-04-01").unwrap();
+
+    assert!(update_diary_entry_db(&conn, entry.id, None, Some(0), "2026-04-01").is_err());
+    assert!(update_diary_entry_db(&conn, entry.id, None, Some(6), "2026-04-01").is_err());
+    assert!(update_diary_entry_db(&conn, entry.id, None, Some(5), "2026-04-01").is_ok());
+}
+
+#[test]
+fn test_diary_entry_date_validation() {
+    let conn = test_conn();
+    let book_id = add_book_db(&conn, "Book", None, None, None, None, None, None, None, None).unwrap();
+
+    assert!(create_diary_entry_db(&conn, book_id, None, None, "not-a-date").is_err());
+    assert!(create_diary_entry_db(&conn, book_id, None, None, "04/01/2026").is_err());
+    assert!(create_diary_entry_db(&conn, book_id, None, None, "2026-04-01").is_ok());
 }

@@ -157,8 +157,8 @@ export async function createDiaryEntry(
   body: string | null,
   rating: number | null,
   entry_date: string
-): Promise<number> {
-  return invoke<number>("create_diary_entry", { book_id, body, rating, entry_date });
+): Promise<DiaryEntry> {
+  return invoke<DiaryEntry>("create_diary_entry", { book_id, body, rating, entry_date });
 }
 
 export async function updateDiaryEntry(
