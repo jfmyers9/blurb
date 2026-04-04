@@ -256,6 +256,7 @@ pub(crate) fn update_reading_dates_db(
 pub(crate) fn import_kindle_books_db(
     conn: &mut rusqlite::Connection,
     books: &[KindleBook],
+    covers_dir: Option<&Path>,
 ) -> Result<Vec<i64>, String> {
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     let mut ids = Vec::new();
@@ -271,20 +272,44 @@ pub(crate) fn import_kindle_books_db(
             continue;
         }
         tx.execute(
-            "INSERT INTO books (title, author, created_at, updated_at) \
-             VALUES (?1, ?2, datetime('now'), datetime('now'))",
-            rusqlite::params![book.title, book.author],
+            "INSERT INTO books (title, author, isbn, asin, publisher, description, \
+             published_date, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, datetime('now'), datetime('now'))",
+            rusqlite::params![
+                book.title,
+                book.author,
+                book.isbn,
+                book.asin,
+                book.publisher,
+                book.description,
+                book.published_date,
+            ],
         )
         .map_err(|e| e.to_string())?;
         let book_id = tx.last_insert_rowid();
         tx.execute(
             "INSERT INTO reading_status (book_id, status, started_at, updated_at) \
-             VALUES (?1, 'reading', date('now'), datetime('now')) \
-             ON CONFLICT(book_id) DO UPDATE SET status='reading', \
-             started_at=date('now'), updated_at=datetime('now')",
+             VALUES (?1, 'want_to_read', NULL, datetime('now')) \
+             ON CONFLICT(book_id) DO UPDATE SET status='want_to_read', \
+             started_at=NULL, updated_at=datetime('now')",
             [book_id],
         )
         .map_err(|e| e.to_string())?;
+        if let (Some(ref cover_b64), Some(dir)) = (&book.cover_data, covers_dir) {
+            use base64::Engine;
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(cover_b64)
+                .map_err(|e| e.to_string())?;
+            fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+            let cover_path = dir.join(format!("{}.jpg", book_id));
+            fs::write(&cover_path, &bytes).map_err(|e| e.to_string())?;
+            let cover_url = cover_path.to_string_lossy().to_string();
+            tx.execute(
+                "UPDATE books SET cover_url = ?1 WHERE id = ?2",
+                rusqlite::params![cover_url, book_id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
         ids.push(book_id);
     }
     tx.commit().map_err(|e| e.to_string())?;
@@ -450,12 +475,17 @@ pub fn list_kindle_books(mount_path: String) -> Result<Vec<KindleBook>, String> 
 
 #[tauri::command]
 pub fn import_kindle_books(
-    _app_handle: tauri::AppHandle,
+    app_handle: tauri::AppHandle,
     state: State<AppState>,
     books: Vec<KindleBook>,
 ) -> Result<Vec<i64>, String> {
+    let covers_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("covers");
     let mut db = state.db.lock().map_err(|e| e.to_string())?;
-    import_kindle_books_db(&mut db, &books)
+    import_kindle_books_db(&mut db, &books, Some(&covers_dir))
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -624,14 +654,16 @@ pub async fn enrich_book(state: State<'_, AppState>, book_id: i64) -> Result<(),
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.execute(
         "UPDATE books SET \
-         isbn = COALESCE(isbn, ?1), \
-         cover_url = COALESCE(cover_url, ?2), \
-         description = COALESCE(description, ?3), \
-         publisher = COALESCE(publisher, ?4), \
-         published_date = COALESCE(published_date, ?5), \
-         page_count = COALESCE(page_count, ?6), \
-         updated_at = datetime('now') WHERE id = ?7",
+         author = COALESCE(author, ?1), \
+         isbn = COALESCE(isbn, ?2), \
+         cover_url = COALESCE(?3, cover_url), \
+         description = COALESCE(description, ?4), \
+         publisher = COALESCE(publisher, ?5), \
+         published_date = COALESCE(published_date, ?6), \
+         page_count = COALESCE(page_count, ?7), \
+         updated_at = datetime('now') WHERE id = ?8",
         rusqlite::params![
+            meta.author,
             meta.isbn,
             meta.cover_url,
             meta.description,
