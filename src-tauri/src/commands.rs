@@ -10,7 +10,7 @@ use tauri::State;
 const BOOK_SELECT: &str = "SELECT b.id, b.title, b.author, b.isbn, b.asin, \
     b.cover_url, b.description, b.publisher, b.published_date, \
     b.page_count, b.created_at, b.updated_at, \
-    r.score, rs.status, rv.body \
+    r.score, rs.status, rs.started_at, rs.finished_at, rv.body \
     FROM books b \
     LEFT JOIN ratings r ON r.book_id = b.id \
     LEFT JOIN reading_status rs ON rs.book_id = b.id \
@@ -32,7 +32,9 @@ fn row_to_book(row: &rusqlite::Row) -> rusqlite::Result<Book> {
         updated_at: row.get(11)?,
         rating: row.get(12)?,
         status: row.get(13)?,
-        review: row.get(14)?,
+        started_at: row.get(14)?,
+        finished_at: row.get(15)?,
+        review: row.get(16)?,
     })
 }
 
@@ -147,20 +149,107 @@ pub(crate) fn set_rating_db(
     Ok(())
 }
 
+fn valid_date(d: &str) -> Result<(), String> {
+    if d.len() != 10
+        || d.as_bytes().get(4) != Some(&b'-')
+        || d.as_bytes().get(7) != Some(&b'-')
+        || !d[..4].chars().all(|c| c.is_ascii_digit())
+        || !d[5..7].chars().all(|c| c.is_ascii_digit())
+        || !d[8..10].chars().all(|c| c.is_ascii_digit())
+    {
+        return Err(format!("Invalid date format (expected YYYY-MM-DD): {d}"));
+    }
+    let month: u32 = d[5..7].parse().unwrap();
+    let day: u32 = d[8..10].parse().unwrap();
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return Err(format!("Invalid date (month/day out of range): {d}"));
+    }
+    Ok(())
+}
+
 pub(crate) fn set_reading_status_db(
     conn: &rusqlite::Connection,
     book_id: i64,
     status: &str,
+    started_at: Option<&str>,
+    finished_at: Option<&str>,
 ) -> Result<(), String> {
     const VALID_STATUSES: &[&str] = &["want_to_read", "reading", "finished", "abandoned"];
     if !VALID_STATUSES.contains(&status) {
         return Err(format!("Invalid reading status: {status}"));
     }
+    if let Some(d) = started_at {
+        valid_date(d)?;
+    }
+    if let Some(d) = finished_at {
+        valid_date(d)?;
+    }
+
+    let today = || -> Result<String, String> {
+        conn.query_row("SELECT date('now')", [], |r| r.get(0))
+            .map_err(|e| e.to_string())
+    };
+
+    match status {
+        "reading" => {
+            let started = match started_at {
+                Some(d) => d.to_string(),
+                None => today()?,
+            };
+            conn.execute(
+                "INSERT INTO reading_status (book_id, status, started_at, finished_at, updated_at) \
+                 VALUES (?1, ?2, ?3, NULL, datetime('now')) \
+                 ON CONFLICT(book_id) DO UPDATE SET status=?2, \
+                 started_at=?3, finished_at=NULL, updated_at=datetime('now')",
+                rusqlite::params![book_id, status, started],
+            )
+        }
+        "finished" | "abandoned" => {
+            let finished = match finished_at {
+                Some(d) => d.to_string(),
+                None => today()?,
+            };
+            let started_override = started_at.map(|s| s.to_string());
+            conn.execute(
+                "INSERT INTO reading_status (book_id, status, started_at, finished_at, updated_at) \
+                 VALUES (?1, ?2, ?3, ?4, datetime('now')) \
+                 ON CONFLICT(book_id) DO UPDATE SET status=?2, \
+                 started_at=COALESCE(?3, reading_status.started_at), \
+                 finished_at=?4, updated_at=datetime('now')",
+                rusqlite::params![book_id, status, started_override, finished],
+            )
+        }
+        _ => {
+            // want_to_read: clear both dates
+            conn.execute(
+                "INSERT INTO reading_status (book_id, status, started_at, finished_at, updated_at) \
+                 VALUES (?1, ?2, NULL, NULL, datetime('now')) \
+                 ON CONFLICT(book_id) DO UPDATE SET status=?2, \
+                 started_at=NULL, finished_at=NULL, updated_at=datetime('now')",
+                rusqlite::params![book_id, status],
+            )
+        }
+    }
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub(crate) fn update_reading_dates_db(
+    conn: &rusqlite::Connection,
+    book_id: i64,
+    started_at: Option<&str>,
+    finished_at: Option<&str>,
+) -> Result<(), String> {
+    if let Some(d) = started_at {
+        valid_date(d)?;
+    }
+    if let Some(d) = finished_at {
+        valid_date(d)?;
+    }
     conn.execute(
-        "INSERT INTO reading_status (book_id, status, updated_at) \
-         VALUES (?1, ?2, datetime('now')) \
-         ON CONFLICT(book_id) DO UPDATE SET status=?2, updated_at=datetime('now')",
-        rusqlite::params![book_id, status],
+        "UPDATE reading_status SET started_at=?2, finished_at=?3, updated_at=datetime('now') \
+         WHERE book_id=?1",
+        rusqlite::params![book_id, started_at, finished_at],
     )
     .map_err(|e| e.to_string())?;
     Ok(())
@@ -206,9 +295,10 @@ pub(crate) fn import_kindle_books_db(
         .map_err(|e| e.to_string())?;
         let book_id = tx.last_insert_rowid();
         tx.execute(
-            "INSERT INTO reading_status (book_id, status, updated_at) \
-             VALUES (?1, 'reading', datetime('now')) \
-             ON CONFLICT(book_id) DO UPDATE SET status='reading', updated_at=datetime('now')",
+            "INSERT INTO reading_status (book_id, status, started_at, updated_at) \
+             VALUES (?1, 'reading', date('now'), datetime('now')) \
+             ON CONFLICT(book_id) DO UPDATE SET status='reading', \
+             started_at=date('now'), updated_at=datetime('now')",
             [book_id],
         )
         .map_err(|e| e.to_string())?;
@@ -331,9 +421,28 @@ pub fn set_reading_status(
     state: State<AppState>,
     book_id: i64,
     status: String,
+    started_at: Option<String>,
+    finished_at: Option<String>,
 ) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    set_reading_status_db(&db, book_id, &status)
+    set_reading_status_db(
+        &db,
+        book_id,
+        &status,
+        started_at.as_deref(),
+        finished_at.as_deref(),
+    )
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn update_reading_dates(
+    state: State<AppState>,
+    book_id: i64,
+    started_at: Option<String>,
+    finished_at: Option<String>,
+) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    update_reading_dates_db(&db, book_id, started_at.as_deref(), finished_at.as_deref())
 }
 
 #[tauri::command(rename_all = "snake_case")]

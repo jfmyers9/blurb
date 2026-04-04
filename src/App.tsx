@@ -159,6 +159,11 @@ function App() {
     setSelectedBook(data.find((b) => b.id === bookId) ?? null);
   };
 
+  const handleRefreshBook = async (bookId: number) => {
+    const data = await refresh();
+    setSelectedBook(data.find((b) => b.id === bookId) ?? null);
+  };
+
   const handleAddToShelf = async (bookId: number, shelfId: number) => {
     await addBookToShelf(bookId, shelfId);
     await loadBookShelves(bookId);
@@ -337,6 +342,7 @@ function App() {
           onRemoveFromShelf={handleRemoveFromShelf}
           onCreateShelf={handleCreateShelf}
           onLoadBookShelves={loadBookShelves}
+          onRefresh={handleRefreshBook}
         />
       )}
 

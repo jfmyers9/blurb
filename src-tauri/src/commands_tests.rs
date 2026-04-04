@@ -100,7 +100,7 @@ fn test_delete_book_cascades() {
     .unwrap();
 
     set_rating_db(&conn, id, 4).unwrap();
-    set_reading_status_db(&conn, id, "reading").unwrap();
+    set_reading_status_db(&conn, id, "reading", None, None).unwrap();
     save_review_db(&conn, id, "Great").unwrap();
 
     delete_book_db(&conn, id).unwrap();
@@ -188,11 +188,11 @@ fn test_set_reading_status() {
     )
     .unwrap();
 
-    set_reading_status_db(&conn, id, "reading").unwrap();
+    set_reading_status_db(&conn, id, "reading", None, None).unwrap();
     let book = get_book_db(&conn, id).unwrap();
     assert_eq!(book.status, Some("reading".to_string()));
 
-    set_reading_status_db(&conn, id, "finished").unwrap();
+    set_reading_status_db(&conn, id, "finished", None, None).unwrap();
     let book = get_book_db(&conn, id).unwrap();
     assert_eq!(book.status, Some("finished".to_string()));
 }
@@ -214,7 +214,7 @@ fn test_invalid_reading_status() {
     )
     .unwrap();
 
-    assert!(set_reading_status_db(&conn, id, "bogus").is_err());
+    assert!(set_reading_status_db(&conn, id, "bogus", None, None).is_err());
 }
 
 #[test]
@@ -567,4 +567,286 @@ fn test_import_clippings_null_location_dedup() {
         )
         .unwrap();
     assert_eq!(count, 1);
+}
+
+fn get_reading_dates(
+    conn: &rusqlite::Connection,
+    book_id: i64,
+) -> (Option<String>, Option<String>) {
+    conn.query_row(
+        "SELECT started_at, finished_at FROM reading_status WHERE book_id = ?1",
+        [book_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .unwrap()
+}
+
+#[test]
+fn test_reading_status_sets_started_at() {
+    let conn = test_conn();
+    let id = add_book_db(
+        &conn, "Dates", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    set_reading_status_db(&conn, id, "want_to_read", None, None).unwrap();
+    let (started, finished) = get_reading_dates(&conn, id);
+    assert_eq!(started, None);
+    assert_eq!(finished, None);
+
+    set_reading_status_db(&conn, id, "reading", None, None).unwrap();
+    let (started, finished) = get_reading_dates(&conn, id);
+    assert!(started.is_some(), "reading should set started_at");
+    assert_eq!(finished, None);
+}
+
+#[test]
+fn test_finished_sets_finished_at_preserves_started_at() {
+    let conn = test_conn();
+    let id = add_book_db(
+        &conn, "Finish", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    set_reading_status_db(&conn, id, "reading", Some("2025-01-15"), None).unwrap();
+    let (started, _) = get_reading_dates(&conn, id);
+    assert_eq!(started, Some("2025-01-15".to_string()));
+
+    set_reading_status_db(&conn, id, "finished", None, None).unwrap();
+    let (started, finished) = get_reading_dates(&conn, id);
+    assert_eq!(
+        started,
+        Some("2025-01-15".to_string()),
+        "started_at preserved"
+    );
+    assert!(finished.is_some(), "finished should set finished_at");
+}
+
+#[test]
+fn test_finished_to_reading_resets_dates() {
+    let conn = test_conn();
+    let id = add_book_db(
+        &conn, "Reread", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    set_reading_status_db(&conn, id, "reading", Some("2025-01-01"), None).unwrap();
+    set_reading_status_db(&conn, id, "finished", None, Some("2025-02-01")).unwrap();
+
+    set_reading_status_db(&conn, id, "reading", None, None).unwrap();
+    let (started, finished) = get_reading_dates(&conn, id);
+    assert!(started.is_some(), "re-reading should set new started_at");
+    assert_ne!(
+        started,
+        Some("2025-01-01".to_string()),
+        "started_at should be fresh"
+    );
+    assert_eq!(finished, None, "finished_at cleared on re-read");
+}
+
+#[test]
+fn test_want_to_read_clears_both_dates() {
+    let conn = test_conn();
+    let id = add_book_db(
+        &conn, "Reset", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    set_reading_status_db(&conn, id, "reading", Some("2025-03-01"), None).unwrap();
+    set_reading_status_db(&conn, id, "finished", None, Some("2025-04-01")).unwrap();
+
+    set_reading_status_db(&conn, id, "want_to_read", None, None).unwrap();
+    let (started, finished) = get_reading_dates(&conn, id);
+    assert_eq!(started, None, "want_to_read clears started_at");
+    assert_eq!(finished, None, "want_to_read clears finished_at");
+}
+
+#[test]
+fn test_manual_date_override() {
+    let conn = test_conn();
+    let id = add_book_db(
+        &conn, "Manual", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    set_reading_status_db(&conn, id, "reading", Some("2024-06-15"), None).unwrap();
+    let (started, _) = get_reading_dates(&conn, id);
+    assert_eq!(started, Some("2024-06-15".to_string()));
+
+    set_reading_status_db(&conn, id, "finished", None, Some("2024-07-20")).unwrap();
+    let (started, finished) = get_reading_dates(&conn, id);
+    assert_eq!(started, Some("2024-06-15".to_string()));
+    assert_eq!(finished, Some("2024-07-20".to_string()));
+}
+
+#[test]
+fn test_invalid_date_format_rejected() {
+    let conn = test_conn();
+    let id = add_book_db(
+        &conn, "BadDate", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    assert!(set_reading_status_db(&conn, id, "reading", Some("2024/06/15"), None).is_err());
+    assert!(set_reading_status_db(&conn, id, "reading", Some("not-a-date"), None).is_err());
+    assert!(set_reading_status_db(&conn, id, "finished", None, Some("06-15-2024")).is_err());
+}
+
+#[test]
+fn test_import_kindle_sets_started_at() {
+    let mut conn = test_conn();
+    let kindle_books = vec![KindleBook {
+        filename: "test.mobi".to_string(),
+        path: "/kindle/test.mobi".to_string(),
+        title: "Kindle Date Test".to_string(),
+        author: Some("Author".to_string()),
+        asin: None,
+        isbn: None,
+        publisher: None,
+        description: None,
+        published_date: None,
+        language: None,
+        cover_data: None,
+        cde_type: None,
+        extension: "mobi".to_string(),
+        size_bytes: 1000,
+    }];
+
+    let ids = import_kindle_books_db(&mut conn, &kindle_books).unwrap();
+    let (started, finished) = get_reading_dates(&conn, ids[0]);
+    assert!(started.is_some(), "kindle import should set started_at");
+    assert_eq!(finished, None);
+}
+
+#[test]
+fn test_abandoned_sets_finished_at() {
+    let conn = test_conn();
+    let id = add_book_db(
+        &conn, "Abandon", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    set_reading_status_db(&conn, id, "reading", Some("2025-01-01"), None).unwrap();
+    set_reading_status_db(&conn, id, "abandoned", None, None).unwrap();
+
+    let (started, finished) = get_reading_dates(&conn, id);
+    assert_eq!(
+        started,
+        Some("2025-01-01".to_string()),
+        "started_at preserved"
+    );
+    assert!(finished.is_some(), "abandoned should auto-set finished_at");
+}
+
+#[test]
+fn test_book_dates_via_get_book_db() {
+    let conn = test_conn();
+    let id = add_book_db(
+        &conn, "GetBook", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    set_reading_status_db(&conn, id, "reading", None, None).unwrap();
+    set_reading_status_db(&conn, id, "finished", None, None).unwrap();
+
+    let book = get_book_db(&conn, id).unwrap();
+    assert!(
+        book.started_at.is_some(),
+        "started_at visible through get_book_db"
+    );
+    assert!(
+        book.finished_at.is_some(),
+        "finished_at visible through get_book_db"
+    );
+}
+
+#[test]
+fn test_semantic_date_validation() {
+    let conn = test_conn();
+    let id = add_book_db(
+        &conn, "DateVal", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    assert!(set_reading_status_db(&conn, id, "reading", Some("2025-13-15"), None).is_err());
+    assert!(set_reading_status_db(&conn, id, "reading", Some("2025-00-15"), None).is_err());
+    assert!(set_reading_status_db(&conn, id, "reading", Some("2025-06-00"), None).is_err());
+    assert!(set_reading_status_db(&conn, id, "reading", Some("2025-06-32"), None).is_err());
+    assert!(set_reading_status_db(&conn, id, "reading", Some("2025-06-15"), None).is_ok());
+}
+
+#[test]
+fn test_simultaneous_date_override() {
+    let conn = test_conn();
+    let id = add_book_db(
+        &conn, "SimDate", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    set_reading_status_db(&conn, id, "reading", None, None).unwrap();
+    set_reading_status_db(
+        &conn,
+        id,
+        "finished",
+        Some("2024-01-01"),
+        Some("2024-12-31"),
+    )
+    .unwrap();
+
+    let (started, finished) = get_reading_dates(&conn, id);
+    assert_eq!(started, Some("2024-01-01".to_string()));
+    assert_eq!(finished, Some("2024-12-31".to_string()));
+}
+
+#[test]
+fn test_update_reading_dates_clears_dates() {
+    let conn = test_conn();
+    let id = add_book_db(
+        &conn, "Clear", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    set_reading_status_db(&conn, id, "reading", None, None).unwrap();
+    set_reading_status_db(&conn, id, "finished", None, None).unwrap();
+
+    let (started, finished) = get_reading_dates(&conn, id);
+    assert!(started.is_some());
+    assert!(finished.is_some());
+
+    update_reading_dates_db(&conn, id, None, None).unwrap();
+
+    let (started, finished) = get_reading_dates(&conn, id);
+    assert_eq!(
+        started, None,
+        "update_reading_dates_db should clear started_at"
+    );
+    assert_eq!(
+        finished, None,
+        "update_reading_dates_db should clear finished_at"
+    );
+}
+
+#[test]
+fn test_update_reading_dates_sets_independently() {
+    let conn = test_conn();
+    let id = add_book_db(
+        &conn, "Indep", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    set_reading_status_db(&conn, id, "reading", None, None).unwrap();
+
+    update_reading_dates_db(&conn, id, Some("2020-05-15"), Some("2020-06-20")).unwrap();
+    let (started, finished) = get_reading_dates(&conn, id);
+    assert_eq!(started, Some("2020-05-15".to_string()));
+    assert_eq!(finished, Some("2020-06-20".to_string()));
+
+    update_reading_dates_db(&conn, id, None, Some("2020-06-20")).unwrap();
+    let (started, finished) = get_reading_dates(&conn, id);
+    assert_eq!(started, None, "started_at cleared independently");
+    assert_eq!(
+        finished,
+        Some("2020-06-20".to_string()),
+        "finished_at preserved"
+    );
 }
