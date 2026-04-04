@@ -7,11 +7,12 @@ pub struct Migration {
 }
 
 fn migrations() -> Vec<Migration> {
-    vec![Migration {
-        version: 1,
-        description: "initial schema",
-        up: |conn| {
-            conn.execute_batch(
+    vec![
+        Migration {
+            version: 1,
+            description: "initial schema",
+            up: |conn| {
+                conn.execute_batch(
                 "CREATE TABLE IF NOT EXISTS books(
                     id INTEGER PRIMARY KEY,
                     title TEXT NOT NULL,
@@ -80,13 +81,13 @@ fn migrations() -> Vec<Migration> {
                     UNIQUE(book_id, text, location_start)
                 );",
             )
+            },
         },
-    },
-    Migration {
-        version: 2,
-        description: "add indexes on foreign key columns",
-        up: |conn| {
-            conn.execute_batch(
+        Migration {
+            version: 2,
+            description: "add indexes on foreign key columns",
+            up: |conn| {
+                conn.execute_batch(
                 "CREATE INDEX IF NOT EXISTS idx_reading_status_book_id ON reading_status(book_id);
                  CREATE INDEX IF NOT EXISTS idx_ratings_book_id ON ratings(book_id);
                  CREATE INDEX IF NOT EXISTS idx_reviews_book_id ON reviews(book_id);
@@ -94,8 +95,9 @@ fn migrations() -> Vec<Migration> {
                  CREATE INDEX IF NOT EXISTS idx_book_shelves_book_id ON book_shelves(book_id);
                  CREATE INDEX IF NOT EXISTS idx_book_shelves_shelf_id ON book_shelves(shelf_id);",
             )
+            },
         },
-    }]
+    ]
 }
 
 fn get_user_version(conn: &Connection) -> Result<i32, rusqlite::Error> {

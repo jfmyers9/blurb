@@ -14,7 +14,15 @@ fn migration_1_creates_all_tables() {
         .unwrap();
     assert_eq!(
         tables,
-        vec!["book_shelves", "books", "highlights", "ratings", "reading_status", "reviews", "shelves"]
+        vec![
+            "book_shelves",
+            "books",
+            "highlights",
+            "ratings",
+            "reading_status",
+            "reviews",
+            "shelves"
+        ]
     );
 }
 
@@ -33,7 +41,9 @@ fn fresh_db_reaches_version_2_with_indexes() {
     assert_eq!(get_user_version(&conn).unwrap(), 2);
 
     let mut stmt = conn
-        .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%' ORDER BY name")
+        .prepare(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%' ORDER BY name",
+        )
         .unwrap();
     let indexes: Vec<String> = stmt
         .query_map([], |row| row.get(0))
@@ -100,7 +110,10 @@ fn failed_migration_includes_version_and_sql_error() {
     }];
 
     let err = run_migration_list(&conn, &migrations).unwrap_err();
-    assert!(err.contains("migration 1"), "error should contain version number: {err}");
+    assert!(
+        err.contains("migration 1"),
+        "error should contain version number: {err}"
+    );
     assert!(
         err.contains("broken schema"),
         "error should contain description: {err}"
@@ -128,7 +141,10 @@ fn failed_migration_does_not_advance_user_version() {
     ];
 
     let err = run_migration_list(&conn, &migrations).unwrap_err();
-    assert!(err.contains("migration 2"), "error should reference version 2: {err}");
+    assert!(
+        err.contains("migration 2"),
+        "error should reference version 2: {err}"
+    );
     assert_eq!(
         get_user_version(&conn).unwrap(),
         1,

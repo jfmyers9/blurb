@@ -2,8 +2,8 @@ mod clippings;
 mod commands;
 mod db;
 mod kindle;
-pub(crate) mod migrations;
 mod metadata;
+pub(crate) mod migrations;
 mod models;
 
 use std::sync::Mutex;
