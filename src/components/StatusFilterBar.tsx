@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import type { Book, Shelf } from "../lib/api";
 import { getStatusInfo } from "./StatusSelect";
+import SortDropdown from "./ui/SortDropdown";
 
 const FILTER_STATUSES = [
   { value: "all", label: "All" },
@@ -40,6 +41,7 @@ interface StatusFilterBarProps {
   minRating: number | null;
   onMinRatingChange: (rating: number | null) => void;
   searchInputRef?: React.RefObject<HTMLInputElement | null>;
+  onClearAll: () => void;
 }
 
 function ShelfPill({
@@ -107,7 +109,7 @@ function ShelfPill({
         type="button"
         onClick={onClick}
         className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium
-          transition-colors ${
+          active:scale-95 transition-all duration-150 ${
             isActive
               ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
               : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
@@ -180,7 +182,22 @@ export default function StatusFilterBar({
   minRating,
   onMinRatingChange,
   searchInputRef,
+  onClearAll,
 }: StatusFilterBarProps) {
+  const [isStuck, setIsStuck] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setIsStuck(!entry.isIntersecting),
+      { threshold: 0, rootMargin: "-49px 0px 0px 0px" }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, []);
+
   const counts = new Map<string, number>();
   counts.set("all", books.length);
   for (const book of books) {
@@ -189,10 +206,15 @@ export default function StatusFilterBar({
   }
 
   return (
-    <div className="space-y-2 px-6 pt-5 pb-1">
+    <>
+    <div ref={sentinelRef} className="h-0" />
+    <div className={`sticky top-[49px] z-20 space-y-2 px-6 pt-5 pb-1 bg-white/80 backdrop-blur dark:bg-gray-900/80 transition-shadow duration-150 ${
+      isStuck ? "shadow-sm border-b border-gray-200 dark:border-gray-700" : ""
+    }`}>
       {/* Status row */}
       <div className="flex items-center justify-between gap-4">
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-gray-400">Status</span>
           {FILTER_STATUSES.map((tab) => {
             const isActive = activeStatus === tab.value;
             const count = counts.get(tab.value) ?? 0;
@@ -205,7 +227,7 @@ export default function StatusFilterBar({
                 type="button"
                 onClick={() => onStatusChange(tab.value)}
                 className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium
-                  transition-colors ${
+                  active:scale-95 transition-all duration-150 ${
                     isActive
                       ? statusInfo?.color ||
                         "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
@@ -247,26 +269,14 @@ export default function StatusFilterBar({
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder="Search..."
-            className="w-48 rounded-md border border-gray-300 bg-white py-1.5 pl-7 pr-2.5 text-xs
+            className="w-48 focus:w-64 transition-all duration-200 rounded-md border border-gray-300 bg-white py-1.5 pl-7 pr-2.5 text-xs
               text-gray-700 placeholder-gray-400 dark:border-gray-600 dark:bg-gray-800
               dark:text-gray-300 dark:placeholder-gray-500
               focus:ring-2 focus:ring-amber-500 focus:outline-none"
           />
         </div>
 
-        <select
-          value={sortBy}
-          onChange={(e) => onSortChange(e.target.value as SortOption)}
-          className="rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs
-            text-gray-700 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300
-            focus:ring-2 focus:ring-amber-500 focus:outline-none"
-        >
-          {SORT_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
+        <SortDropdown value={sortBy} onChange={onSortChange} options={SORT_OPTIONS} />
 
         <div className="flex gap-0.5">
           <button
@@ -307,7 +317,8 @@ export default function StatusFilterBar({
 
       {/* Rating row */}
       {books.some((b) => b.rating != null) && (
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-gray-200 pt-2 dark:border-gray-700">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-gray-400">Rating</span>
           {([
             { value: null, label: "Any Rating" },
             { value: 3, label: "3+" },
@@ -320,12 +331,15 @@ export default function StatusFilterBar({
                 key={opt.label}
                 type="button"
                 onClick={() => onMinRatingChange(opt.value)}
-                className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                className={`rounded-full px-3 py-1.5 text-xs font-medium active:scale-95 transition-all duration-150 ${
                   isActive
                     ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
                     : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
                 }`}
               >
+                {opt.value !== null && (
+                  <span className="text-[10px] opacity-60">★</span>
+                )}
                 {opt.label}
               </button>
             );
@@ -335,12 +349,13 @@ export default function StatusFilterBar({
 
       {/* Shelf row */}
       {shelves.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-gray-200 pt-2 dark:border-gray-700">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-gray-400">Shelves</span>
           <button
             type="button"
             onClick={() => onShelfChange(null)}
             className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium
-              transition-colors ${
+              active:scale-95 transition-all duration-150 ${
                 activeShelf === null
                   ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
                   : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
@@ -361,6 +376,76 @@ export default function StatusFilterBar({
           ))}
         </div>
       )}
+
+      {/* Active filter summary strip */}
+      {(activeStatus !== "all" || minRating !== null || activeShelf !== null || searchQuery !== "") && (
+        <div
+          data-testid="filter-summary"
+          className="flex flex-wrap items-center gap-1.5 border-t border-gray-200 pt-2 dark:border-gray-700"
+        >
+          <span className="text-[10px] font-medium uppercase tracking-wider text-gray-400">Filters</span>
+          {activeStatus !== "all" && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+              {FILTER_STATUSES.find((s) => s.value === activeStatus)?.label}
+              <button
+                type="button"
+                data-testid="dismiss-status"
+                onClick={() => onStatusChange("all")}
+                className="ml-0.5 text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200"
+              >
+                ×
+              </button>
+            </span>
+          )}
+          {minRating !== null && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+              {minRating}+ ★
+              <button
+                type="button"
+                data-testid="dismiss-rating"
+                onClick={() => onMinRatingChange(null)}
+                className="ml-0.5 text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200"
+              >
+                ×
+              </button>
+            </span>
+          )}
+          {activeShelf !== null && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+              {shelves.find((s) => s.id === activeShelf)?.name}
+              <button
+                type="button"
+                data-testid="dismiss-shelf"
+                onClick={() => onShelfChange(null)}
+                className="ml-0.5 text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200"
+              >
+                ×
+              </button>
+            </span>
+          )}
+          {searchQuery !== "" && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+              search: {searchQuery}
+              <button
+                type="button"
+                data-testid="dismiss-search"
+                onClick={() => onSearchChange("")}
+                className="ml-0.5 text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200"
+              >
+                ×
+              </button>
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={onClearAll}
+            className="text-xs font-medium text-amber-700 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-200"
+          >
+            Clear all
+          </button>
+        </div>
+      )}
     </div>
+    </>
   );
 }
