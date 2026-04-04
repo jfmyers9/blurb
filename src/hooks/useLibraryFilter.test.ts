@@ -17,6 +17,8 @@ function makeBook(overrides: Partial<Book> = {}): Book {
     page_count: null,
     created_at: "2024-01-01",
     updated_at: "2024-01-01",
+    started_at: null,
+    finished_at: null,
     rating: null,
     status: null,
     review: null,
