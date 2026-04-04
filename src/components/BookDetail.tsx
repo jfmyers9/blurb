@@ -2,11 +2,12 @@ import { useState, useCallback, useEffect } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { generateHTML } from "@tiptap/html";
 import { sharedExtensions } from "../lib/editorExtensions";
-import type { Book, BookMetadata, Highlight } from "../lib/api";
+import type { Book, BookMetadata, Highlight, Shelf } from "../lib/api";
 import { searchCovers, uploadCover, listHighlights, enrichBook } from "../lib/api";
 import { coverSrc } from "../lib/cover";
 import RatingStars from "./RatingStars";
 import StatusSelect from "./StatusSelect";
+import ShelfPicker from "./ShelfPicker";
 
 interface BookDetailProps {
   book: Book;
@@ -18,6 +19,12 @@ interface BookDetailProps {
   onEditReview: (bookId: number) => void;
   onLookup: (bookId: number) => Promise<void>;
   onCoverChange: (bookId: number, coverUrl: string) => Promise<void>;
+  shelves: Shelf[];
+  bookShelfIds: number[];
+  onAddToShelf: (bookId: number, shelfId: number) => Promise<void>;
+  onRemoveFromShelf: (bookId: number, shelfId: number) => Promise<void>;
+  onCreateShelf: (name: string) => Promise<Shelf>;
+  onLoadBookShelves: (bookId: number) => Promise<void>;
 }
 
 export default function BookDetail({
@@ -30,6 +37,12 @@ export default function BookDetail({
   onEditReview,
   onLookup,
   onCoverChange,
+  shelves,
+  bookShelfIds,
+  onAddToShelf,
+  onRemoveFromShelf,
+  onCreateShelf,
+  onLoadBookShelves,
 }: BookDetailProps) {
   const [title, setTitle] = useState(book.title);
   const [author, setAuthor] = useState(book.author ?? "");
@@ -40,7 +53,8 @@ export default function BookDetail({
 
   useEffect(() => {
     listHighlights(book.id).then(setHighlights).catch(() => setHighlights([]));
-  }, [book.id]);
+    onLoadBookShelves(book.id).catch(() => {});
+  }, [book.id, onLoadBookShelves]);
 
   const [showCoverMenu, setShowCoverMenu] = useState(false);
   const [coverMode, setCoverMode] = useState<"menu" | "paste" | "search" | null>(null);
@@ -382,6 +396,20 @@ export default function BookDetail({
             <StatusSelect
               status={book.status}
               onChange={(status) => onStatusChange(book.id, status)}
+            />
+          </div>
+
+          {/* Shelves */}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">
+              Shelves
+            </label>
+            <ShelfPicker
+              shelves={shelves}
+              bookShelfIds={bookShelfIds}
+              onAdd={(shelfId) => onAddToShelf(book.id, shelfId)}
+              onRemove={(shelfId) => onRemoveFromShelf(book.id, shelfId)}
+              onCreate={onCreateShelf}
             />
           </div>
 

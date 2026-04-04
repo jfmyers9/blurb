@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import "./App.css";
 import {
   listBooks,
@@ -8,13 +8,23 @@ import {
   setRating,
   setReadingStatus,
   lookupIsbn,
+  listShelves,
+  listBookShelves,
+  addBookToShelf,
+  removeBookFromShelf,
+  createShelf,
+  renameShelf,
+  deleteShelf,
+  listAllShelfBookIds,
 } from "./lib/api";
-import type { Book } from "./lib/api";
+import type { Book, Shelf } from "./lib/api";
 import LibraryGrid from "./components/LibraryGrid";
 import BookDetail from "./components/BookDetail";
 import AddBookForm from "./components/AddBookForm";
 import KindleSync from "./components/KindleSync";
 import ReviewPage from "./components/ReviewPage";
+import StatusFilterBar from "./components/StatusFilterBar";
+import type { FilterStatus, SortOption } from "./components/StatusFilterBar";
 
 function App() {
   const [books, setBooks] = useState<Book[]>([]);
@@ -22,22 +32,67 @@ function App() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [showKindle, setShowKindle] = useState(false);
   const [editingReviewBookId, setEditingReviewBookId] = useState<number | null>(null);
+  const [activeStatus, setActiveStatus] = useState<FilterStatus>("all");
+  const [sortBy, setSortBy] = useState<SortOption>("date_added");
+  const [shelves, setShelves] = useState<Shelf[]>([]);
+  const [bookShelfMap, setBookShelfMap] = useState<Record<number, number[]>>({});
+  const [activeShelf, setActiveShelf] = useState<number | null>(null);
+  const [shelfBookIdsMap, setShelfBookIdsMap] = useState<Record<number, number[]>>({});
+
+  const filteredBooks = useMemo(() => {
+    let filtered =
+      activeStatus === "all"
+        ? books
+        : books.filter((b) => b.status === activeStatus);
+
+    if (activeShelf !== null) {
+      const bookIds = new Set(shelfBookIdsMap[activeShelf] ?? []);
+      filtered = filtered.filter((b) => bookIds.has(b.id));
+    }
+
+    filtered = [...filtered].sort((a, b) => {
+      switch (sortBy) {
+        case "title":
+          return a.title.localeCompare(b.title);
+        case "author":
+          return (a.author ?? "").localeCompare(b.author ?? "");
+        case "rating":
+          return (b.rating ?? 0) - (a.rating ?? 0);
+        case "date_added":
+        default:
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      }
+    });
+
+    return filtered;
+  }, [books, activeStatus, activeShelf, shelfBookIdsMap, sortBy]);
 
   const refresh = useCallback(async () => {
-    const data = await listBooks();
-    setBooks(data);
-  }, []);
-
-  // Refresh selected book from latest list
-  const refreshAndSync = useCallback(async () => {
     const data = await listBooks();
     setBooks(data);
     return data;
   }, []);
 
+  const refreshShelves = useCallback(async () => {
+    const [s, pairs] = await Promise.all([listShelves(), listAllShelfBookIds()]);
+    setShelves(s);
+    const map: Record<number, number[]> = {};
+    for (const [shelfId, bookId] of pairs) {
+      (map[shelfId] ??= []).push(bookId);
+    }
+    setShelfBookIdsMap(map);
+    return s;
+  }, []);
+
+  const loadBookShelves = useCallback(async (bookId: number) => {
+    const bs = await listBookShelves(bookId);
+    setBookShelfMap((prev) => ({ ...prev, [bookId]: bs.map((s) => s.id) }));
+  }, []);
+
   useEffect(() => {
     refresh();
-  }, [refresh]);
+    refreshShelves();
+  }, [refresh, refreshShelves]);
 
   const handleAdd = async (data: {
     title: string;
@@ -81,7 +136,7 @@ function App() {
       published_date: book.published_date,
       page_count: book.page_count,
     });
-    const data = await refreshAndSync();
+    const data = await refresh();
     setSelectedBook(data.find((b) => b.id === id) ?? null);
   };
 
@@ -89,18 +144,76 @@ function App() {
     await deleteBook(id);
     setSelectedBook(null);
     await refresh();
+    await refreshShelves();
   };
 
   const handleRate = async (bookId: number, score: number) => {
     await setRating(bookId, score);
-    const data = await refreshAndSync();
+    const data = await refresh();
     setSelectedBook(data.find((b) => b.id === bookId) ?? null);
   };
 
   const handleStatusChange = async (bookId: number, status: string) => {
     await setReadingStatus(bookId, status);
-    const data = await refreshAndSync();
+    const data = await refresh();
     setSelectedBook(data.find((b) => b.id === bookId) ?? null);
+  };
+
+  const handleAddToShelf = async (bookId: number, shelfId: number) => {
+    await addBookToShelf(bookId, shelfId);
+    await loadBookShelves(bookId);
+    setShelfBookIdsMap((prev) => ({
+      ...prev,
+      [shelfId]: [...(prev[shelfId] ?? []), bookId],
+    }));
+  };
+
+  const handleRemoveFromShelf = async (bookId: number, shelfId: number) => {
+    await removeBookFromShelf(bookId, shelfId);
+    await loadBookShelves(bookId);
+    setShelfBookIdsMap((prev) => ({
+      ...prev,
+      [shelfId]: (prev[shelfId] ?? []).filter((id) => id !== bookId),
+    }));
+  };
+
+  const handleCreateShelf = async (name: string) => {
+    const id = await createShelf(name);
+    const updated = await refreshShelves();
+    const created = updated.find((s) => s.id === id);
+    if (!created) throw new Error(`Shelf ${id} not found after creation`);
+    return created;
+  };
+
+  const handleRenameShelf = async (shelfId: number, newName: string) => {
+    await renameShelf(shelfId, newName);
+    setShelves((prev) =>
+      prev.map((s) => (s.id === shelfId ? { ...s, name: newName } : s))
+    );
+  };
+
+  const handleDeleteShelf = async (shelfId: number, bookCount: number) => {
+    const msg =
+      bookCount > 0
+        ? `This shelf contains ${bookCount} book${bookCount === 1 ? "" : "s"}. Books won't be deleted. Delete shelf?`
+        : "Delete this shelf?";
+    if (!window.confirm(msg)) return;
+    await deleteShelf(shelfId);
+    setShelves((prev) => prev.filter((s) => s.id !== shelfId));
+    setShelfBookIdsMap((prev) => {
+      const next = { ...prev };
+      delete next[shelfId];
+      return next;
+    });
+    setBookShelfMap((prev) => {
+      const next: Record<number, number[]> = {};
+      for (const [bookId, shelfIds] of Object.entries(prev)) {
+        const filtered = shelfIds.filter((id) => id !== shelfId);
+        if (filtered.length > 0) next[Number(bookId)] = filtered;
+      }
+      return next;
+    });
+    if (activeShelf === shelfId) setActiveShelf(null);
   };
 
   const handleCoverChange = async (bookId: number, coverUrl: string) => {
@@ -118,7 +231,7 @@ function App() {
       published_date: book.published_date,
       page_count: book.page_count,
     });
-    const data = await refreshAndSync();
+    const data = await refresh();
     setSelectedBook(data.find((b) => b.id === bookId) ?? null);
   };
 
@@ -138,7 +251,7 @@ function App() {
       published_date: meta.published_date ?? book.published_date,
       page_count: meta.page_count ?? book.page_count,
     });
-    const data = await refreshAndSync();
+    const data = await refresh();
     setSelectedBook(data.find((b) => b.id === bookId) ?? null);
   };
 
@@ -184,8 +297,23 @@ function App() {
 
       {/* Main */}
       <main className="flex-1">
-        <LibraryGrid
+        <StatusFilterBar
           books={books}
+          activeStatus={activeStatus}
+          onStatusChange={setActiveStatus}
+          sortBy={sortBy}
+          onSortChange={setSortBy}
+          shelves={shelves}
+          activeShelf={activeShelf}
+          onShelfChange={setActiveShelf}
+          shelfBookCounts={Object.fromEntries(
+            shelves.map((s) => [s.id, shelfBookIdsMap[s.id]?.length ?? 0])
+          )}
+          onRenameShelf={handleRenameShelf}
+          onDeleteShelf={handleDeleteShelf}
+        />
+        <LibraryGrid
+          books={filteredBooks}
           onSelectBook={(book) => setSelectedBook(book)}
         />
       </main>
@@ -202,6 +330,12 @@ function App() {
           onEditReview={(bookId) => setEditingReviewBookId(bookId)}
           onLookup={handleLookup}
           onCoverChange={handleCoverChange}
+          shelves={shelves}
+          bookShelfIds={bookShelfMap[selectedBook.id] ?? []}
+          onAddToShelf={handleAddToShelf}
+          onRemoveFromShelf={handleRemoveFromShelf}
+          onCreateShelf={handleCreateShelf}
+          onLoadBookShelves={loadBookShelves}
         />
       )}
 
@@ -211,7 +345,7 @@ function App() {
           bookId={editingReviewBookId}
           onClose={() => setEditingReviewBookId(null)}
           onSave={async () => {
-            const data = await refreshAndSync();
+            const data = await refresh();
             setSelectedBook(data.find((b) => b.id === editingReviewBookId) ?? null);
           }}
         />

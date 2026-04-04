@@ -204,3 +204,58 @@ export async function listHighlights(
 ): Promise<Highlight[]> {
   return invoke<Highlight[]>("list_highlights", { book_id });
 }
+
+export interface Shelf {
+  id: number;
+  name: string;
+  created_at: string;
+}
+
+export async function createShelf(name: string): Promise<number> {
+  return invoke<number>("create_shelf", { name });
+}
+
+export async function listShelves(): Promise<Shelf[]> {
+  return invoke<Shelf[]>("list_shelves");
+}
+
+export async function renameShelf(
+  id: number,
+  name: string
+): Promise<void> {
+  return invoke<void>("rename_shelf", { id, name });
+}
+
+export async function deleteShelf(id: number): Promise<void> {
+  return invoke<void>("delete_shelf", { id });
+}
+
+export async function addBookToShelf(
+  book_id: number,
+  shelf_id: number
+): Promise<void> {
+  return invoke<void>("add_book_to_shelf", { book_id, shelf_id });
+}
+
+export async function removeBookFromShelf(
+  book_id: number,
+  shelf_id: number
+): Promise<void> {
+  return invoke<void>("remove_book_from_shelf", { book_id, shelf_id });
+}
+
+export async function listBookShelves(
+  book_id: number
+): Promise<Shelf[]> {
+  return invoke<Shelf[]>("list_book_shelves", { book_id });
+}
+
+export async function listShelfBookIds(
+  shelf_id: number
+): Promise<number[]> {
+  return invoke<number[]>("list_shelf_book_ids", { shelf_id });
+}
+
+export async function listAllShelfBookIds(): Promise<[number, number][]> {
+  return invoke<[number, number][]>("list_all_shelf_book_ids");
+}
