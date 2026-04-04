@@ -2,12 +2,13 @@ import { useState, useCallback, useEffect } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { generateHTML } from "@tiptap/html";
 import { sharedExtensions } from "../lib/editorExtensions";
-import type { Book, BookMetadata, Highlight, Shelf } from "../lib/api";
-import { searchCovers, uploadCover, listHighlights, enrichBook, updateReadingDates } from "../lib/api";
+import type { Book, BookMetadata, Highlight, Shelf, DiaryEntry } from "../lib/api";
+import { searchCovers, uploadCover, listHighlights, enrichBook, updateReadingDates, listBookDiaryEntries, deleteDiaryEntry } from "../lib/api";
 import { coverSrc } from "../lib/cover";
 import RatingStars from "./RatingStars";
 import StatusSelect from "./StatusSelect";
 import ShelfPicker from "./ShelfPicker";
+import DiaryEntryForm from "./DiaryEntryForm";
 
 interface BookDetailProps {
   book: Book;
@@ -16,7 +17,6 @@ interface BookDetailProps {
   onDelete: (id: number) => Promise<void>;
   onRate: (bookId: number, score: number) => Promise<void>;
   onStatusChange: (bookId: number, status: string) => Promise<void>;
-  onEditReview: (bookId: number) => void;
   onLookup: (bookId: number) => Promise<void>;
   onCoverChange: (bookId: number, coverUrl: string) => Promise<void>;
   shelves: Shelf[];
@@ -35,7 +35,6 @@ export default function BookDetail({
   onDelete,
   onRate,
   onStatusChange,
-  onEditReview,
   onLookup,
   onCoverChange,
   shelves,
@@ -52,11 +51,18 @@ export default function BookDetail({
   const [enriching, setEnriching] = useState(false);
 
   const [highlights, setHighlights] = useState<Highlight[]>([]);
+  const [diaryEntries, setDiaryEntries] = useState<DiaryEntry[]>([]);
+  const [diaryForm, setDiaryForm] = useState<{ mode: "create" } | { mode: "edit"; entry: DiaryEntry } | null>(null);
+
+  const refreshDiaryEntries = useCallback(() => {
+    listBookDiaryEntries(book.id).then(setDiaryEntries).catch(() => setDiaryEntries([]));
+  }, [book.id]);
 
   useEffect(() => {
     listHighlights(book.id).then(setHighlights).catch(() => setHighlights([]));
     onLoadBookShelves(book.id).catch(() => {});
-  }, [book.id, onLoadBookShelves]);
+    refreshDiaryEntries();
+  }, [book.id, onLoadBookShelves, refreshDiaryEntries]);
 
   const [showCoverMenu, setShowCoverMenu] = useState(false);
   const [coverMode, setCoverMode] = useState<"menu" | "paste" | "search" | null>(null);
@@ -463,47 +469,124 @@ export default function BookDetail({
             />
           </div>
 
-          {/* Review */}
+          {/* Diary Entries */}
           <div>
-            <div className="mb-1 flex items-center justify-between">
+            <div className="mb-2 flex items-center justify-between">
               <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                Review
+                Diary Entries
               </label>
               <button
                 type="button"
-                onClick={() => onEditReview(book.id)}
+                onClick={() => setDiaryForm({ mode: "create" })}
                 className="rounded-md px-2 py-1 text-xs font-medium
                   text-amber-600 hover:bg-amber-50
                   dark:text-amber-400 dark:hover:bg-amber-900/20"
               >
-                Edit Review
+                Add Entry
               </button>
             </div>
-            {book.review ? (
-              (() => {
-                try {
-                  const doc = JSON.parse(book.review);
-                  const html = generateHTML(doc, sharedExtensions);
-                  return (
-                    <div
-                      className="prose prose-sm dark:prose-invert line-clamp-4 text-gray-600 dark:text-gray-400"
-                      dangerouslySetInnerHTML={{ __html: html }}
-                    />
-                  );
-                } catch {
-                  return (
-                    <p className="line-clamp-4 text-sm text-gray-600 dark:text-gray-400">
-                      {book.review}
-                    </p>
-                  );
-                }
-              })()
+            {diaryEntries.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-gray-300 px-4 py-6 text-center dark:border-gray-600">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  No journal entries yet
+                </p>
+                <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                  Capture your thoughts about this book.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setDiaryForm({ mode: "create" })}
+                  className="mt-3 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium
+                    text-white shadow-sm hover:bg-amber-700 active:scale-95"
+                >
+                  Add First Entry
+                </button>
+              </div>
             ) : (
-              <p className="text-sm text-gray-400 dark:text-gray-500 italic">
-                No review yet
-              </p>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {diaryEntries.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2
+                      dark:border-gray-700 dark:bg-gray-800/50"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                        {entry.entry_date}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        {entry.rating && (
+                          <div className="flex gap-0.5">
+                            {[1, 2, 3, 4, 5].map((s) => (
+                              <svg
+                                key={s}
+                                className={`h-3 w-3 ${
+                                  s <= entry.rating!
+                                    ? "text-amber-400 fill-amber-400"
+                                    : "text-gray-300 dark:text-gray-600 fill-current"
+                                }`}
+                                viewBox="0 0 20 20"
+                                fill="currentColor"
+                              >
+                                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                              </svg>
+                            ))}
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setDiaryForm({ mode: "edit", entry })}
+                          className="rounded p-1 text-gray-400 hover:text-amber-600 dark:hover:text-amber-400"
+                          title="Edit"
+                        >
+                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await deleteDiaryEntry(entry.id);
+                            refreshDiaryEntries();
+                          }}
+                          className="rounded p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400"
+                          title="Delete"
+                        >
+                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                    {entry.body && (
+                      <p className="mt-1 text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
+                        {(() => {
+                          try {
+                            const doc = JSON.parse(entry.body!);
+                            const html = generateHTML(doc, sharedExtensions);
+                            const tmp = document.createElement("div");
+                            tmp.innerHTML = html;
+                            return tmp.textContent?.slice(0, 200) ?? "";
+                          } catch {
+                            return entry.body!.slice(0, 200);
+                          }
+                        })()}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
           </div>
+
+          {diaryForm && (
+            <DiaryEntryForm
+              bookId={book.id}
+              entry={diaryForm.mode === "edit" ? diaryForm.entry : undefined}
+              onSave={() => refreshDiaryEntries()}
+              onClose={() => setDiaryForm(null)}
+            />
+          )}
 
           {/* Highlights */}
           <div className="border-t border-gray-200 pt-4 dark:border-gray-700">

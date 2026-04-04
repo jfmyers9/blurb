@@ -17,7 +17,6 @@ export interface Book {
   status: string | null;
   started_at: string | null;
   finished_at: string | null;
-  review: string | null;
 }
 
 export type ReadingStatus =
@@ -140,11 +139,47 @@ export async function searchCovers(query: string): Promise<BookMetadata[]> {
   return invoke<BookMetadata[]>("search_covers", { query });
 }
 
-export async function saveReview(
+export interface DiaryEntry {
+  id: number;
+  book_id: number;
+  book_title: string;
+  book_author: string | null;
+  book_cover_url: string | null;
+  body: string | null;
+  rating: number | null;
+  entry_date: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function createDiaryEntry(
   book_id: number,
-  body: string
+  body: string | null,
+  rating: number | null,
+  entry_date: string
+): Promise<number> {
+  return invoke<number>("create_diary_entry", { book_id, body, rating, entry_date });
+}
+
+export async function updateDiaryEntry(
+  id: number,
+  body: string | null,
+  rating: number | null,
+  entry_date: string
 ): Promise<void> {
-  return invoke<void>("save_review", { book_id, body });
+  return invoke<void>("update_diary_entry", { id, body, rating, entry_date });
+}
+
+export async function deleteDiaryEntry(id: number): Promise<void> {
+  return invoke<void>("delete_diary_entry", { id });
+}
+
+export async function listDiaryEntries(): Promise<DiaryEntry[]> {
+  return invoke<DiaryEntry[]>("list_diary_entries");
+}
+
+export async function listBookDiaryEntries(book_id: number): Promise<DiaryEntry[]> {
+  return invoke<DiaryEntry[]>("list_book_diary_entries", { book_id });
 }
 
 export interface KindleBook {

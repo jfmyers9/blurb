@@ -1,6 +1,6 @@
 use crate::kindle::KindleBook;
 use crate::metadata::BookMetadata;
-use crate::models::{Book, Highlight, Shelf};
+use crate::models::{Book, DiaryEntry, Highlight, Shelf};
 use crate::AppState;
 use std::fs;
 use std::path::Path;
@@ -10,11 +10,10 @@ use tauri::State;
 const BOOK_SELECT: &str = "SELECT b.id, b.title, b.author, b.isbn, b.asin, \
     b.cover_url, b.description, b.publisher, b.published_date, \
     b.page_count, b.created_at, b.updated_at, \
-    r.score, rs.status, rs.started_at, rs.finished_at, rv.body \
+    r.score, rs.status, rs.started_at, rs.finished_at \
     FROM books b \
     LEFT JOIN ratings r ON r.book_id = b.id \
-    LEFT JOIN reading_status rs ON rs.book_id = b.id \
-    LEFT JOIN reviews rv ON rv.book_id = b.id";
+    LEFT JOIN reading_status rs ON rs.book_id = b.id";
 
 fn row_to_book(row: &rusqlite::Row) -> rusqlite::Result<Book> {
     Ok(Book {
@@ -34,7 +33,6 @@ fn row_to_book(row: &rusqlite::Row) -> rusqlite::Result<Book> {
         status: row.get(13)?,
         started_at: row.get(14)?,
         finished_at: row.get(15)?,
-        review: row.get(16)?,
     })
 }
 
@@ -255,21 +253,6 @@ pub(crate) fn update_reading_dates_db(
     Ok(())
 }
 
-pub(crate) fn save_review_db(
-    conn: &rusqlite::Connection,
-    book_id: i64,
-    body: &str,
-) -> Result<(), String> {
-    conn.execute(
-        "INSERT INTO reviews (book_id, body, created_at, updated_at) \
-         VALUES (?1, ?2, datetime('now'), datetime('now')) \
-         ON CONFLICT(book_id) DO UPDATE SET body=?2, updated_at=datetime('now')",
-        rusqlite::params![book_id, body],
-    )
-    .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
 pub(crate) fn import_kindle_books_db(
     conn: &mut rusqlite::Connection,
     books: &[KindleBook],
@@ -443,12 +426,6 @@ pub fn update_reading_dates(
 ) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     update_reading_dates_db(&db, book_id, started_at.as_deref(), finished_at.as_deref())
-}
-
-#[tauri::command(rename_all = "snake_case")]
-pub fn save_review(state: State<AppState>, book_id: i64, body: String) -> Result<(), String> {
-    let db = state.db.lock().map_err(|e| e.to_string())?;
-    save_review_db(&db, book_id, &body)
 }
 
 #[tauri::command]
@@ -840,6 +817,159 @@ pub(crate) fn list_all_shelf_book_ids_db(
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
     Ok(pairs)
+}
+
+const DIARY_SELECT: &str = "SELECT d.id, d.book_id, b.title, b.author, b.cover_url, \
+    d.body, d.rating, d.entry_date, d.created_at, d.updated_at \
+    FROM diary_entries d \
+    INNER JOIN books b ON b.id = d.book_id";
+
+fn row_to_diary_entry(row: &rusqlite::Row) -> rusqlite::Result<DiaryEntry> {
+    Ok(DiaryEntry {
+        id: row.get(0)?,
+        book_id: row.get(1)?,
+        book_title: row.get(2)?,
+        book_author: row.get(3)?,
+        book_cover_url: row.get(4)?,
+        body: row.get(5)?,
+        rating: row.get(6)?,
+        entry_date: row.get(7)?,
+        created_at: row.get(8)?,
+        updated_at: row.get(9)?,
+    })
+}
+
+pub(crate) fn create_diary_entry_db(
+    conn: &rusqlite::Connection,
+    book_id: i64,
+    body: Option<&str>,
+    rating: Option<i32>,
+    entry_date: &str,
+) -> Result<DiaryEntry, String> {
+    if let Some(r) = rating {
+        if !(1..=5).contains(&r) {
+            return Err(format!("Rating must be between 1 and 5, got {r}"));
+        }
+    }
+    conn.execute(
+        "INSERT INTO diary_entries (book_id, body, rating, entry_date, created_at, updated_at) \
+         VALUES (?1, ?2, ?3, ?4, datetime('now'), datetime('now'))",
+        rusqlite::params![book_id, body, rating, entry_date],
+    )
+    .map_err(|e| e.to_string())?;
+    let id = conn.last_insert_rowid();
+    let mut stmt = conn
+        .prepare(&format!("{} WHERE d.id = ?1", DIARY_SELECT))
+        .map_err(|e| e.to_string())?;
+    stmt.query_row([id], row_to_diary_entry)
+        .map_err(|e| e.to_string())
+}
+
+pub(crate) fn update_diary_entry_db(
+    conn: &rusqlite::Connection,
+    id: i64,
+    body: Option<&str>,
+    rating: Option<i32>,
+    entry_date: &str,
+) -> Result<(), String> {
+    if let Some(r) = rating {
+        if !(1..=5).contains(&r) {
+            return Err(format!("Rating must be between 1 and 5, got {r}"));
+        }
+    }
+    conn.execute(
+        "UPDATE diary_entries SET body = ?1, rating = ?2, entry_date = ?3, \
+         updated_at = datetime('now') WHERE id = ?4",
+        rusqlite::params![body, rating, entry_date, id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub(crate) fn delete_diary_entry_db(conn: &rusqlite::Connection, id: i64) -> Result<(), String> {
+    conn.execute("DELETE FROM diary_entries WHERE id = ?1", [id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub(crate) fn list_diary_entries_db(
+    conn: &rusqlite::Connection,
+) -> Result<Vec<DiaryEntry>, String> {
+    let mut stmt = conn
+        .prepare(&format!(
+            "{} ORDER BY d.entry_date DESC, d.id DESC",
+            DIARY_SELECT
+        ))
+        .map_err(|e| e.to_string())?;
+    let entries = stmt
+        .query_map([], row_to_diary_entry)
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    Ok(entries)
+}
+
+pub(crate) fn list_book_diary_entries_db(
+    conn: &rusqlite::Connection,
+    book_id: i64,
+) -> Result<Vec<DiaryEntry>, String> {
+    let mut stmt = conn
+        .prepare(&format!(
+            "{} WHERE d.book_id = ?1 ORDER BY d.entry_date DESC, d.id DESC",
+            DIARY_SELECT
+        ))
+        .map_err(|e| e.to_string())?;
+    let entries = stmt
+        .query_map([book_id], row_to_diary_entry)
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    Ok(entries)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn create_diary_entry(
+    state: State<AppState>,
+    book_id: i64,
+    body: Option<String>,
+    rating: Option<i32>,
+    entry_date: String,
+) -> Result<DiaryEntry, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    create_diary_entry_db(&db, book_id, body.as_deref(), rating, &entry_date)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn update_diary_entry(
+    state: State<AppState>,
+    id: i64,
+    body: Option<String>,
+    rating: Option<i32>,
+    entry_date: String,
+) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    update_diary_entry_db(&db, id, body.as_deref(), rating, &entry_date)
+}
+
+#[tauri::command]
+pub fn delete_diary_entry(state: State<AppState>, id: i64) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    delete_diary_entry_db(&db, id)
+}
+
+#[tauri::command]
+pub fn list_diary_entries(state: State<AppState>) -> Result<Vec<DiaryEntry>, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    list_diary_entries_db(&db)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn list_book_diary_entries(
+    state: State<AppState>,
+    book_id: i64,
+) -> Result<Vec<DiaryEntry>, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    list_book_diary_entries_db(&db, book_id)
 }
 
 #[tauri::command]

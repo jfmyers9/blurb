@@ -53,7 +53,6 @@ fn test_get_book() {
     assert_eq!(book.author, Some("Author".to_string()));
     assert_eq!(book.rating, None);
     assert_eq!(book.status, None);
-    assert_eq!(book.review, None);
 }
 
 #[test]
@@ -101,7 +100,6 @@ fn test_delete_book_cascades() {
 
     set_rating_db(&conn, id, 4).unwrap();
     set_reading_status_db(&conn, id, "reading", None, None).unwrap();
-    save_review_db(&conn, id, "Great").unwrap();
 
     delete_book_db(&conn, id).unwrap();
 
@@ -117,15 +115,6 @@ fn test_delete_book_cascades() {
     let count: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM reading_status WHERE book_id = ?1",
-            [id],
-            |r| r.get(0),
-        )
-        .unwrap();
-    assert_eq!(count, 0);
-
-    let count: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM reviews WHERE book_id = ?1",
             [id],
             |r| r.get(0),
         )
@@ -215,23 +204,6 @@ fn test_invalid_reading_status() {
     .unwrap();
 
     assert!(set_reading_status_db(&conn, id, "bogus", None, None).is_err());
-}
-
-#[test]
-fn test_save_review() {
-    let conn = test_conn();
-    let id = add_book_db(
-        &conn, "Reviewed", None, None, None, None, None, None, None, None,
-    )
-    .unwrap();
-
-    save_review_db(&conn, id, "Amazing book").unwrap();
-    let book = get_book_db(&conn, id).unwrap();
-    assert_eq!(book.review, Some("Amazing book".to_string()));
-
-    save_review_db(&conn, id, "Updated review").unwrap();
-    let book = get_book_db(&conn, id).unwrap();
-    assert_eq!(book.review, Some("Updated review".to_string()));
 }
 
 #[test]
@@ -849,4 +821,133 @@ fn test_update_reading_dates_sets_independently() {
         Some("2020-06-20".to_string()),
         "finished_at preserved"
     );
+}
+
+#[test]
+fn test_create_diary_entry() {
+    let conn = test_conn();
+    let book_id = add_book_db(
+        &conn,
+        "Diary Book",
+        Some("Author"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let entry = create_diary_entry_db(
+        &conn,
+        book_id,
+        Some("Great read today"),
+        Some(4),
+        "2026-04-01",
+    )
+    .unwrap();
+
+    assert_eq!(entry.book_id, book_id);
+    assert_eq!(entry.body, Some("Great read today".to_string()));
+    assert_eq!(entry.rating, Some(4));
+    assert_eq!(entry.entry_date, "2026-04-01");
+    assert_eq!(entry.book_title, Some("Diary Book".to_string()));
+    assert_eq!(entry.book_author, Some("Author".to_string()));
+}
+
+#[test]
+fn test_diary_entry_rating_validation() {
+    let conn = test_conn();
+    let book_id = add_book_db(
+        &conn, "Book", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    assert!(create_diary_entry_db(&conn, book_id, None, Some(0), "2026-04-01").is_err());
+    assert!(create_diary_entry_db(&conn, book_id, None, Some(6), "2026-04-01").is_err());
+    assert!(create_diary_entry_db(&conn, book_id, None, Some(3), "2026-04-01").is_ok());
+}
+
+#[test]
+fn test_diary_entries_ordering() {
+    let conn = test_conn();
+    let book_id = add_book_db(
+        &conn, "Book", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    let e1 = create_diary_entry_db(&conn, book_id, Some("First"), None, "2026-04-01").unwrap();
+    let e2 = create_diary_entry_db(&conn, book_id, Some("Second"), None, "2026-04-03").unwrap();
+    let e3 = create_diary_entry_db(&conn, book_id, Some("Third"), None, "2026-04-01").unwrap();
+
+    let entries = list_book_diary_entries_db(&conn, book_id).unwrap();
+    assert_eq!(entries.len(), 3);
+    // 2026-04-03 first, then 2026-04-01 by id DESC
+    assert_eq!(entries[0].id, e2.id);
+    assert_eq!(entries[1].id, e3.id);
+    assert_eq!(entries[2].id, e1.id);
+
+    // list_diary_entries_db should return same ordering
+    let all = list_diary_entries_db(&conn).unwrap();
+    assert_eq!(all.len(), 3);
+    assert_eq!(all[0].id, e2.id);
+}
+
+#[test]
+fn test_update_diary_entry() {
+    let conn = test_conn();
+    let book_id = add_book_db(
+        &conn, "Book", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    let entry =
+        create_diary_entry_db(&conn, book_id, Some("Original"), Some(3), "2026-04-01").unwrap();
+
+    update_diary_entry_db(&conn, entry.id, Some("Updated"), Some(5), "2026-04-02").unwrap();
+
+    let entries = list_book_diary_entries_db(&conn, book_id).unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].body, Some("Updated".to_string()));
+    assert_eq!(entries[0].rating, Some(5));
+    assert_eq!(entries[0].entry_date, "2026-04-02");
+}
+
+#[test]
+fn test_delete_diary_entry() {
+    let conn = test_conn();
+    let book_id = add_book_db(
+        &conn, "Book", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    let entry = create_diary_entry_db(&conn, book_id, None, None, "2026-04-01").unwrap();
+    assert_eq!(list_book_diary_entries_db(&conn, book_id).unwrap().len(), 1);
+
+    delete_diary_entry_db(&conn, entry.id).unwrap();
+    assert_eq!(list_book_diary_entries_db(&conn, book_id).unwrap().len(), 0);
+}
+
+#[test]
+fn test_delete_book_cascades_diary_entries() {
+    let conn = test_conn();
+    let book_id = add_book_db(
+        &conn, "Doomed", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    create_diary_entry_db(&conn, book_id, Some("Entry"), None, "2026-04-01").unwrap();
+
+    delete_book_db(&conn, book_id).unwrap();
+
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM diary_entries WHERE book_id = ?1",
+            [book_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 0);
 }

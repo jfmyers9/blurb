@@ -18,7 +18,20 @@ pub struct Book {
     pub status: Option<String>,
     pub started_at: Option<String>,
     pub finished_at: Option<String>,
-    pub review: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiaryEntry {
+    pub id: i64,
+    pub book_id: i64,
+    pub book_title: Option<String>,
+    pub book_author: Option<String>,
+    pub book_cover_url: Option<String>,
+    pub body: Option<String>,
+    pub rating: Option<i32>,
+    pub entry_date: String,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
