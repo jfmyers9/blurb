@@ -338,7 +338,7 @@ pub fn list_kindle_books(mount_path: String) -> Result<Vec<KindleBook>, String> 
 
 #[tauri::command]
 pub fn import_kindle_books(
-    app_handle: tauri::AppHandle,
+    _app_handle: tauri::AppHandle,
     state: State<AppState>,
     books: Vec<KindleBook>,
 ) -> Result<Vec<i64>, String> {
@@ -389,19 +389,11 @@ pub fn upload_cover(
 }
 
 fn find_clippings_file(mount_path: &str) -> Option<std::path::PathBuf> {
-    let base = Path::new(mount_path);
-    // Try common paths case-insensitively
-    for dir_name in &["documents", "Documents", "DOCUMENTS"] {
-        let dir = base.join(dir_name);
-        if !dir.is_dir() {
-            continue;
-        }
-        if let Ok(entries) = fs::read_dir(&dir) {
-            for entry in entries.flatten() {
-                let name = entry.file_name();
-                if name.to_string_lossy().eq_ignore_ascii_case("My Clippings.txt") {
-                    return Some(entry.path());
-                }
+    let docs_dir = crate::kindle::find_documents_dir(Path::new(mount_path))?;
+    if let Ok(entries) = fs::read_dir(&docs_dir) {
+        for entry in entries.flatten() {
+            if entry.file_name().to_string_lossy().eq_ignore_ascii_case("My Clippings.txt") {
+                return Some(entry.path());
             }
         }
     }
@@ -442,6 +434,8 @@ pub fn import_clippings(state: State<AppState>, mount_path: String) -> Result<us
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let mut imported = 0usize;
 
+    db.execute_batch("BEGIN").map_err(|e| e.to_string())?;
+
     for clip in &clippings {
         let normalized_title = clip.title.trim().to_lowercase();
         let book_id: Option<i64> = db
@@ -456,6 +450,21 @@ pub fn import_clippings(state: State<AppState>, mount_path: String) -> Result<us
             Some(id) => id,
             None => continue,
         };
+
+        // SQLite treats NULL != NULL, so ON CONFLICT won't catch duplicates
+        // when location_start is NULL. Check manually in that case.
+        if clip.location_start.is_none() {
+            let exists: bool = db
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM highlights WHERE book_id = ?1 AND text = ?2 AND location_start IS NULL)",
+                    rusqlite::params![book_id, clip.text],
+                    |row| row.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+            if exists {
+                continue;
+            }
+        }
 
         let result = db.execute(
             "INSERT INTO highlights (book_id, text, location_start, location_end, page, clip_type, clipped_at) \
@@ -477,6 +486,8 @@ pub fn import_clippings(state: State<AppState>, mount_path: String) -> Result<us
             _ => {}
         }
     }
+
+    db.execute_batch("COMMIT").map_err(|e| e.to_string())?;
 
     Ok(imported)
 }
@@ -511,15 +522,9 @@ pub async fn enrich_book(state: State<'_, AppState>, book_id: i64) -> Result<(),
     // Only fill NULL columns
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.execute(
-        "UPDATE books SET \
-         isbn = CASE WHEN isbn IS NULL THEN ?1 ELSE isbn END, \
-         cover_url = CASE WHEN cover_url IS NULL THEN ?2 ELSE cover_url END, \
-         description = CASE WHEN description IS NULL THEN ?3 ELSE description END, \
-         publisher = CASE WHEN publisher IS NULL THEN ?4 ELSE publisher END, \
-         published_date = CASE WHEN published_date IS NULL THEN ?5 ELSE published_date END, \
-         page_count = CASE WHEN page_count IS NULL THEN ?6 ELSE page_count END, \
-         updated_at = datetime('now') \
-         WHERE id = ?7",
+        "UPDATE books SET isbn = ?1, cover_url = ?2, description = ?3, \
+         publisher = ?4, published_date = ?5, page_count = ?6, \
+         updated_at = datetime('now') WHERE id = ?7",
         rusqlite::params![
             if isbn.is_none() { meta.isbn } else { isbn },
             if cover_url.is_none() { meta.cover_url } else { cover_url },
@@ -829,6 +834,14 @@ mod tests {
                 path: "/kindle/existing.mobi".to_string(),
                 title: "Existing Book".to_string(),
                 author: Some("Author".to_string()),
+                asin: None,
+                isbn: None,
+                publisher: None,
+                description: None,
+                published_date: None,
+                language: None,
+                cover_data: None,
+                cde_type: None,
                 extension: "mobi".to_string(),
                 size_bytes: 1000,
             },
@@ -837,6 +850,14 @@ mod tests {
                 path: "/kindle/new.mobi".to_string(),
                 title: "New Book".to_string(),
                 author: Some("New Author".to_string()),
+                asin: None,
+                isbn: None,
+                publisher: None,
+                description: None,
+                published_date: None,
+                language: None,
+                cover_data: None,
+                cde_type: None,
                 extension: "mobi".to_string(),
                 size_bytes: 2000,
             },
@@ -857,5 +878,34 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM books", [], |r| r.get(0))
             .unwrap();
         assert_eq!(total, 2);
+    }
+
+    #[test]
+    fn test_import_clippings_null_location_dedup() {
+        let conn = test_conn();
+
+        conn.execute(
+            "INSERT INTO books (title, author, created_at, updated_at) VALUES ('Test Book', 'Author', datetime('now'), datetime('now'))",
+            [],
+        ).unwrap();
+
+        conn.execute(
+            "INSERT INTO highlights (book_id, text, location_start, clip_type, created_at) VALUES (1, 'some text', NULL, 'bookmark', datetime('now'))",
+            [],
+        ).unwrap();
+
+        let exists: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM highlights WHERE book_id = 1 AND text = 'some text' AND location_start IS NULL)",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert!(exists, "Dedup check should detect existing NULL-location highlight");
+
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM highlights WHERE book_id = 1 AND text = 'some text'",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(count, 1);
     }
 }

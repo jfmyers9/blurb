@@ -1,4 +1,13 @@
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
+use std::time::Duration;
+
+static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .expect("failed to build HTTP client")
+});
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct BookMetadata {
@@ -62,7 +71,7 @@ async fn open_library(isbn: &str) -> Result<BookMetadata, String> {
         "https://openlibrary.org/api/books?bibkeys=ISBN:{}&format=json&jscmd=data",
         isbn
     );
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let resp: std::collections::HashMap<String, OLBookData> = client
         .get(&url)
         .send()
@@ -172,7 +181,7 @@ struct OLTitleSearchDoc {
 }
 
 pub async fn search_covers(query: &str) -> Result<Vec<BookMetadata>, String> {
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let url = format!(
         "https://openlibrary.org/search.json?q={}&fields=title,author_name,cover_i,isbn&limit=5",
         urlencoding::encode(query)
@@ -231,7 +240,7 @@ async fn search_by_title_open_library(
         "https://openlibrary.org/search.json?q={}&fields=title,author_name,cover_i,isbn,publisher,first_publish_year,number_of_pages_median&limit=1",
         urlencoding::encode(&query)
     );
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let resp: OLTitleSearchResponse = client
         .get(&url)
         .send()
@@ -275,7 +284,7 @@ async fn search_by_title_google(
         "https://www.googleapis.com/books/v1/volumes?q={}",
         query
     );
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let resp: GoogleBooksResponse = client
         .get(&url)
         .send()
@@ -321,7 +330,7 @@ async fn google_books(isbn: &str) -> Result<BookMetadata, String> {
         "https://www.googleapis.com/books/v1/volumes?q=isbn:{}",
         isbn
     );
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.clone();
     let resp: GoogleBooksResponse = client
         .get(&url)
         .send()

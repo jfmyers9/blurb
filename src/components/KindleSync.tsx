@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   detectKindle,
   listKindleBooks,
@@ -52,6 +52,11 @@ export default function KindleSync({
   const [importedClippingsCount, setImportedClippingsCount] = useState(0);
   const [enrichProgress, setEnrichProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const cancelledRef = useRef(false);
+
+  useEffect(() => {
+    return () => { cancelledRef.current = true; };
+  }, []);
 
   const handleDetect = async () => {
     setPhase("detecting");
@@ -101,18 +106,20 @@ export default function KindleSync({
         (async () => {
           const booksToEnrich: number[] = [];
           for (const id of ids) {
+            if (cancelledRef.current) return;
             try {
               const book = await getBook(id);
               if (!book.cover_url) booksToEnrich.push(id);
             } catch { /* skip */ }
           }
-          if (booksToEnrich.length > 0) {
-            for (let i = 0; i < booksToEnrich.length; i++) {
-              setEnrichProgress(`Enriching ${i + 1}/${booksToEnrich.length}...`);
-              try {
-                await enrichBook(booksToEnrich[i]);
-              } catch { /* best effort */ }
-            }
+          for (let i = 0; i < booksToEnrich.length; i++) {
+            if (cancelledRef.current) break;
+            setEnrichProgress(`Enriching ${i + 1}/${booksToEnrich.length}...`);
+            try {
+              await enrichBook(booksToEnrich[i]);
+            } catch { /* best effort */ }
+          }
+          if (!cancelledRef.current) {
             setEnrichProgress(null);
             onImportComplete();
           }

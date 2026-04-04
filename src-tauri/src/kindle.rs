@@ -59,7 +59,7 @@ fn has_subdir_case_insensitive(parent: &Path, name: &str) -> bool {
     })
 }
 
-fn find_documents_dir(mount: &Path) -> Option<std::path::PathBuf> {
+pub(crate) fn find_documents_dir(mount: &Path) -> Option<std::path::PathBuf> {
     let entries = fs::read_dir(mount).ok()?;
     for entry in entries.flatten() {
         if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false)
@@ -344,59 +344,63 @@ mod tests {
 
     #[test]
     fn strip_asin_underscore() {
-        assert_eq!(strip_asin_suffix("Title_B0ABCDEFGH"), "Title");
+        assert_eq!(strip_asin_suffix("Title_B0ABCDEFGH"), ("Title", Some("B0ABCDEFGH")));
     }
 
     #[test]
     fn strip_asin_parens() {
-        assert_eq!(strip_asin_suffix("Title (B0ABCDEFGH)"), "Title");
+        assert_eq!(strip_asin_suffix("Title (B0ABCDEFGH)"), ("Title", Some("B0ABCDEFGH")));
     }
 
     #[test]
     fn strip_ebok() {
-        assert_eq!(strip_asin_suffix("Title_EBOK"), "Title");
+        assert_eq!(strip_asin_suffix("Title_EBOK"), ("Title", None));
     }
 
     #[test]
     fn strip_pdoc() {
-        assert_eq!(strip_asin_suffix("Title_PDOC"), "Title");
+        assert_eq!(strip_asin_suffix("Title_PDOC"), ("Title", None));
     }
 
     #[test]
     fn strip_ebsp() {
-        assert_eq!(strip_asin_suffix("Title_EBSP"), "Title");
+        assert_eq!(strip_asin_suffix("Title_EBSP"), ("Title", None));
     }
 
     #[test]
     fn strip_no_match() {
-        assert_eq!(strip_asin_suffix("Title"), "Title");
+        assert_eq!(strip_asin_suffix("Title"), ("Title", None));
     }
 
     #[test]
     fn parse_title_and_author() {
-        let (title, author) = parse_kindle_filename("The Great Gatsby - F Scott Fitzgerald");
+        let (title, author, asin) = parse_kindle_filename("The Great Gatsby - F Scott Fitzgerald");
         assert_eq!(title, "The Great Gatsby");
         assert_eq!(author, Some("F Scott Fitzgerald".to_string()));
+        assert_eq!(asin, None);
     }
 
     #[test]
     fn parse_underscores_no_author() {
-        let (title, author) = parse_kindle_filename("Some_Book_Title");
+        let (title, author, asin) = parse_kindle_filename("Some_Book_Title");
         assert_eq!(title, "Some Book Title");
         assert_eq!(author, None);
+        assert_eq!(asin, None);
     }
 
     #[test]
     fn parse_empty_author() {
-        let (title, author) = parse_kindle_filename("Title - ");
+        let (title, author, asin) = parse_kindle_filename("Title - ");
         assert_eq!(title, "Title");
         assert_eq!(author, None);
+        assert_eq!(asin, None);
     }
 
     #[test]
     fn parse_strips_asin_from_both() {
-        let (title, author) = parse_kindle_filename("My Book - Author_B0ABCDEFGH");
+        let (title, author, asin) = parse_kindle_filename("My Book - Author_B0ABCDEFGH");
         assert_eq!(title, "My Book");
         assert_eq!(author, Some("Author".to_string()));
+        assert_eq!(asin, Some("B0ABCDEFGH".to_string()));
     }
 }

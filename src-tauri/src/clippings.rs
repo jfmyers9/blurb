@@ -246,4 +246,28 @@ This reminds me of modern surveillance
         assert_eq!(clips[0].location_start, Some(1500));
         assert!(clips[0].text.is_empty());
     }
+
+    #[test]
+    fn test_parse_timestamp_midnight() {
+        let block = "Test Book (Author)\n- Your Highlight on page 1 | Location 1-2 | Added on Monday, January 1, 2024 12:00:00 AM\n\nSome text";
+        let clippings = parse_clippings(&format!("{}\n==========", block));
+        assert_eq!(clippings.len(), 1);
+        assert!(
+            clippings[0].clipped_at.as_ref().unwrap().contains("T00:00:00"),
+            "12:00:00 AM should map to hour 0, got: {}",
+            clippings[0].clipped_at.as_ref().unwrap()
+        );
+    }
+
+    #[test]
+    fn test_parse_timestamp_noon() {
+        let block = "Test Book (Author)\n- Your Highlight on page 1 | Location 1-2 | Added on Monday, January 1, 2024 12:30:00 PM\n\nSome text";
+        let clippings = parse_clippings(&format!("{}\n==========", block));
+        assert_eq!(clippings.len(), 1);
+        assert!(
+            clippings[0].clipped_at.as_ref().unwrap().contains("T12:30:00"),
+            "12:30:00 PM should stay hour 12, got: {}",
+            clippings[0].clipped_at.as_ref().unwrap()
+        );
+    }
 }
