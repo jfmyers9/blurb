@@ -48,6 +48,19 @@ pub fn init_schema(conn: &Connection) -> Result<(), String> {
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
             UNIQUE(book_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS highlights(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            text TEXT NOT NULL,
+            location_start INTEGER,
+            location_end INTEGER,
+            page INTEGER,
+            clip_type TEXT NOT NULL CHECK(clip_type IN ('highlight','note','bookmark')),
+            clipped_at TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(book_id, text, location_start)
         );",
     )
     .map_err(|e| e.to_string())?;

@@ -1,7 +1,7 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { Book, BookMetadata } from "../lib/api";
-import { searchCovers, uploadCover } from "../lib/api";
+import type { Book, BookMetadata, Highlight } from "../lib/api";
+import { searchCovers, uploadCover, listHighlights, enrichBook } from "../lib/api";
 import { coverSrc } from "../lib/cover";
 import RatingStars from "./RatingStars";
 import StatusSelect from "./StatusSelect";
@@ -33,6 +33,12 @@ export default function BookDetail({
   const [author, setAuthor] = useState(book.author ?? "");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [enriching, setEnriching] = useState(false);
+
+  const [highlights, setHighlights] = useState<Highlight[]>([]);
+
+  useEffect(() => {
+    listHighlights(book.id).then(setHighlights).catch(() => setHighlights([]));
+  }, [book.id]);
 
   const [showCoverMenu, setShowCoverMenu] = useState(false);
   const [coverMode, setCoverMode] = useState<"menu" | "paste" | "search" | null>(null);
@@ -295,6 +301,31 @@ export default function BookDetail({
             </div>
           )}
 
+          {/* Enrich metadata */}
+          {(!book.cover_url || !book.description) && (
+            <div className="flex justify-center">
+              <button
+                type="button"
+                disabled={enriching}
+                onClick={async () => {
+                  setEnriching(true);
+                  try {
+                    await enrichBook(book.id);
+                    await onLookup(book.id);
+                  } finally {
+                    setEnriching(false);
+                  }
+                }}
+                className="rounded-md bg-amber-600/10 px-3 py-1.5 text-xs font-medium
+                  text-amber-600 hover:bg-amber-600/20
+                  dark:text-amber-400 dark:hover:bg-amber-600/20
+                  disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {enriching ? "Enriching..." : "Enrich metadata"}
+              </button>
+            </div>
+          )}
+
           {/* Title */}
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">
@@ -391,6 +422,68 @@ export default function BookDetail({
               <p className="text-sm text-gray-400 dark:text-gray-500 italic">
                 No review yet
               </p>
+            )}
+          </div>
+
+          {/* Highlights */}
+          <div className="border-t border-gray-200 pt-4 dark:border-gray-700">
+            <label className="mb-2 block text-xs font-medium text-gray-500 dark:text-gray-400">
+              Highlights
+            </label>
+            {highlights.length === 0 ? (
+              <p className="text-sm text-gray-400 dark:text-gray-500 italic">
+                No highlights yet
+              </p>
+            ) : (
+              <div className="space-y-3 max-h-64 overflow-y-auto">
+                {highlights.map((h) => (
+                  <div
+                    key={h.id}
+                    className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2
+                      dark:border-gray-700 dark:bg-gray-800/50"
+                  >
+                    <div className="flex items-start gap-2">
+                      <svg
+                        className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-500"
+                        fill="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path d="M6 17h3l2-4V7H5v6h3zm8 0h3l2-4V7h-6v6h3z" />
+                      </svg>
+                      {h.text ? (
+                        <p className="text-sm text-gray-700 dark:text-gray-300 italic">
+                          {h.text}
+                        </p>
+                      ) : (
+                        <p className="text-sm text-gray-400 italic">Bookmark</p>
+                      )}
+                    </div>
+                    <div className="mt-1 flex items-center gap-2 text-[10px] text-gray-500 dark:text-gray-400">
+                      <span
+                        className={`rounded px-1 py-0.5 font-medium uppercase ${
+                          h.clip_type === "highlight"
+                            ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+                            : h.clip_type === "note"
+                              ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                              : "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
+                        }`}
+                      >
+                        {h.clip_type}
+                      </span>
+                      {h.location_start != null && (
+                        <span>
+                          Loc {h.location_start}
+                          {h.location_end != null && `-${h.location_end}`}
+                        </span>
+                      )}
+                      {h.page != null && <span>p. {h.page}</span>}
+                      {h.clipped_at && (
+                        <span>{new Date(h.clipped_at).toLocaleDateString()}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
 
