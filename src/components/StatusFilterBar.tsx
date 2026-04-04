@@ -12,6 +12,7 @@ const FILTER_STATUSES = [
 
 export type FilterStatus = (typeof FILTER_STATUSES)[number]["value"];
 export type SortOption = "title" | "author" | "date_added" | "rating";
+export type ViewMode = "grid" | "list";
 
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: "date_added", label: "Date Added" },
@@ -32,6 +33,13 @@ interface StatusFilterBarProps {
   shelfBookCounts: Record<number, number>;
   onRenameShelf: (shelfId: number, newName: string) => Promise<void>;
   onDeleteShelf: (shelfId: number, bookCount: number) => Promise<void>;
+  searchQuery: string;
+  onSearchChange: (q: string) => void;
+  viewMode: ViewMode;
+  onViewModeChange: (mode: ViewMode) => void;
+  minRating: number | null;
+  onMinRatingChange: (rating: number | null) => void;
+  searchInputRef?: React.RefObject<HTMLInputElement | null>;
 }
 
 function ShelfPill({
@@ -82,6 +90,7 @@ function ShelfPill({
         onKeyDown={(e) => {
           if (e.key === "Enter") commitRename();
           if (e.key === "Escape") {
+            e.stopPropagation();
             setEditName(shelf.name);
             setEditing(false);
           }
@@ -164,6 +173,13 @@ export default function StatusFilterBar({
   shelfBookCounts,
   onRenameShelf,
   onDeleteShelf,
+  searchQuery,
+  onSearchChange,
+  viewMode,
+  onViewModeChange,
+  minRating,
+  onMinRatingChange,
+  searchInputRef,
 }: StatusFilterBarProps) {
   const counts = new Map<string, number>();
   counts.set("all", books.length);
@@ -211,6 +227,33 @@ export default function StatusFilterBar({
           })}
         </div>
 
+        <div className="relative">
+          <svg
+            className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"
+            />
+          </svg>
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder="Search..."
+            className="w-48 rounded-md border border-gray-300 bg-white py-1.5 pl-7 pr-2.5 text-xs
+              text-gray-700 placeholder-gray-400 dark:border-gray-600 dark:bg-gray-800
+              dark:text-gray-300 dark:placeholder-gray-500
+              focus:ring-2 focus:ring-amber-500 focus:outline-none"
+          />
+        </div>
+
         <select
           value={sortBy}
           onChange={(e) => onSortChange(e.target.value as SortOption)}
@@ -224,7 +267,71 @@ export default function StatusFilterBar({
             </option>
           ))}
         </select>
+
+        <div className="flex gap-0.5">
+          <button
+            type="button"
+            title="Grid view"
+            onClick={() => onViewModeChange("grid")}
+            className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
+              viewMode === "grid"
+                ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+                : "text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
+            }`}
+          >
+            <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 16 16">
+              <rect x="1" y="1" width="6" height="6" rx="1" />
+              <rect x="9" y="1" width="6" height="6" rx="1" />
+              <rect x="1" y="9" width="6" height="6" rx="1" />
+              <rect x="9" y="9" width="6" height="6" rx="1" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            title="List view"
+            onClick={() => onViewModeChange("list")}
+            className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
+              viewMode === "list"
+                ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+                : "text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
+            }`}
+          >
+            <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 16 16">
+              <rect x="1" y="2" width="14" height="2" rx="0.5" />
+              <rect x="1" y="7" width="14" height="2" rx="0.5" />
+              <rect x="1" y="12" width="14" height="2" rx="0.5" />
+            </svg>
+          </button>
+        </div>
       </div>
+
+      {/* Rating row */}
+      {books.some((b) => b.rating != null) && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {([
+            { value: null, label: "Any Rating" },
+            { value: 3, label: "3+" },
+            { value: 4, label: "4+" },
+            { value: 5, label: "5" },
+          ] as const).map((opt) => {
+            const isActive = minRating === opt.value;
+            return (
+              <button
+                key={opt.label}
+                type="button"
+                onClick={() => onMinRatingChange(opt.value)}
+                className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                  isActive
+                    ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                }`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Shelf row */}
       {shelves.length > 0 && (

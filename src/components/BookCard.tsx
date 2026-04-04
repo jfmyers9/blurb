@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import type { Book } from "../lib/api";
 import { coverSrc } from "../lib/cover";
 import RatingStars from "./RatingStars";
@@ -8,18 +9,21 @@ interface BookCardProps {
   onClick: () => void;
 }
 
-export default function BookCard({ book, onClick }: BookCardProps) {
-  const statusInfo = getStatusInfo(book.status);
+const BookCard = forwardRef<HTMLButtonElement, BookCardProps>(
+  function BookCard({ book, onClick }, ref) {
+    const statusInfo = getStatusInfo(book.status);
 
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="group flex flex-col overflow-hidden rounded-lg bg-white
-        shadow-sm ring-1 ring-gray-200 transition hover:shadow-md
-        hover:ring-amber-300 dark:bg-gray-800 dark:ring-gray-700
-        dark:hover:ring-amber-600 cursor-pointer text-left"
-    >
+    return (
+      <button
+        ref={ref}
+        type="button"
+        onClick={onClick}
+        className="group flex flex-col overflow-hidden rounded-lg bg-white
+          shadow-sm ring-1 ring-gray-200 transition hover:shadow-md
+          hover:ring-amber-300 dark:bg-gray-800 dark:ring-gray-700
+          dark:hover:ring-amber-600 cursor-pointer text-left
+          focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
+      >
       {/* Cover */}
       <div className="relative aspect-[2/3] w-full overflow-hidden bg-gray-100 dark:bg-gray-700">
         {book.cover_url ? (
@@ -68,4 +72,7 @@ export default function BookCard({ book, onClick }: BookCardProps) {
       </div>
     </button>
   );
-}
+  }
+);
+
+export default BookCard;
