@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { lookupIsbn, searchCovers } from "../lib/api";
 import type { BookMetadata } from "../lib/api";
 
@@ -30,8 +30,58 @@ export default function AddBookForm({ open, onClose, onAdd }: AddBookFormProps) 
   const [coverUrl, setCoverUrl] = useState("");
   const [coverResults, setCoverResults] = useState<BookMetadata[]>([]);
   const [searchingCovers, setSearchingCovers] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<BookMetadata[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchDone, setSearchDone] = useState(false);
+  const searchCounterRef = useRef(0);
+
+  const resetForm = () => {
+    setTitle("");
+    setAuthor("");
+    setIsbn("");
+    setMetadata(null);
+    setLookupError(null);
+    setCoverUrl("");
+    setCoverResults([]);
+    setSearchQuery("");
+    setSearchResults([]);
+    setSearching(false);
+    setSearchError(null);
+    setSearchDone(false);
+  };
+
+  const handleClose = () => {
+    resetForm();
+    onClose();
+  };
 
   if (!open) return null;
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim() || searching) return;
+    const requestId = ++searchCounterRef.current;
+    setSearching(true);
+    setSearchResults([]);
+    setSearchError(null);
+    setSearchDone(false);
+    try {
+      const results = await searchCovers(searchQuery.trim());
+      if (requestId === searchCounterRef.current) {
+        setSearchResults(results);
+        setSearchDone(true);
+      }
+    } catch (err) {
+      if (requestId === searchCounterRef.current) {
+        setSearchError(err instanceof Error ? err.message : String(err));
+      }
+    } finally {
+      if (requestId === searchCounterRef.current) {
+        setSearching(false);
+      }
+    }
+  };
 
   const handleLookup = async () => {
     if (!isbn.trim()) return;
@@ -64,13 +114,7 @@ export default function AddBookForm({ open, onClose, onAdd }: AddBookFormProps) 
         published_date: metadata?.published_date,
         page_count: metadata?.page_count,
       });
-      setTitle("");
-      setAuthor("");
-      setIsbn("");
-      setMetadata(null);
-      setLookupError(null);
-      setCoverUrl("");
-      setCoverResults([]);
+      resetForm();
       onClose();
     } finally {
       setSubmitting(false);
@@ -82,7 +126,7 @@ export default function AddBookForm({ open, onClose, onAdd }: AddBookFormProps) 
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/50"
-        onClick={onClose}
+        onClick={handleClose}
       />
       {/* Modal */}
       <form
@@ -95,6 +139,101 @@ export default function AddBookForm({ open, onClose, onAdd }: AddBookFormProps) 
         </h2>
 
         <div className="space-y-3">
+          {/* Book search */}
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Search books
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSearchQuery(val);
+                  if (!val.trim()) {
+                    setSearchResults([]);
+                    setSearchDone(false);
+                    setSearchError(null);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleSearch();
+                  }
+                }}
+                placeholder="Search by title or author…"
+                className="flex-1 rounded-md border border-gray-300 bg-white px-3
+                  py-2 text-sm text-gray-900 dark:border-gray-600
+                  dark:bg-gray-700 dark:text-gray-100 focus:ring-2
+                  focus:ring-amber-500 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={handleSearch}
+                disabled={searching || !searchQuery.trim()}
+                className="rounded-md bg-gray-100 px-3 py-2 text-sm font-medium
+                  text-gray-700 hover:bg-gray-200 disabled:opacity-50
+                  disabled:cursor-not-allowed dark:bg-gray-600
+                  dark:text-gray-200 dark:hover:bg-gray-500"
+              >
+                {searching ? "Searching…" : "Search"}
+              </button>
+            </div>
+            {searchResults.length > 0 && (
+              <ul className="mt-2 max-h-52 overflow-y-auto rounded-md border
+                border-gray-200 dark:border-gray-600">
+                {searchResults.map((result, i) => (
+                  <li key={result.isbn || result.title || String(i)}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (result.title) setTitle(result.title);
+                        if (result.author) setAuthor(result.author);
+                        if (result.isbn) setIsbn(result.isbn);
+                        if (result.cover_url) setCoverUrl(result.cover_url);
+                        setMetadata(result);
+                        setSearchResults([]);
+                        setSearchDone(false);
+                      }}
+                      className="flex w-full items-center gap-3 px-3 py-2 text-left
+                        text-sm hover:bg-gray-100 dark:hover:bg-gray-700
+                        text-gray-900 dark:text-gray-100"
+                    >
+                      {result.cover_url ? (
+                        <img
+                          src={result.cover_url}
+                          alt=""
+                          className="h-10 w-7 flex-shrink-0 rounded object-cover"
+                        />
+                      ) : (
+                        <div className="h-10 w-7 flex-shrink-0 rounded bg-gray-200
+                          dark:bg-gray-600" />
+                      )}
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">
+                          {result.title || "Untitled"}
+                        </p>
+                        {result.author && (
+                          <p className="truncate text-xs text-gray-500 dark:text-gray-400">
+                            {result.author}
+                          </p>
+                        )}
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {searchError && (
+              <p className="mt-1 text-xs text-red-500">{searchError}</p>
+            )}
+            {searchDone && searchResults.length === 0 && !searchError && (
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">No results found</p>
+            )}
+          </div>
+
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
               ISBN
@@ -164,6 +303,8 @@ export default function AddBookForm({ open, onClose, onAdd }: AddBookFormProps) 
                   try {
                     const results = await searchCovers(query);
                     setCoverResults(results);
+                  } catch {
+                    // cover search is best-effort
                   } finally {
                     setSearchingCovers(false);
                   }
@@ -178,30 +319,32 @@ export default function AddBookForm({ open, onClose, onAdd }: AddBookFormProps) 
               </button>
               {coverResults.length > 0 && (
                 <div className="mt-2 grid grid-cols-4 gap-2">
-                  {coverResults.map((result, i) =>
-                    result.cover_url ? (
+                  {coverResults.map((result, i) => {
+                    const url = result.cover_url;
+                    if (!url) return null;
+                    return (
                       <button
-                        key={i}
+                        key={result.isbn || result.title || String(i)}
                         type="button"
                         onClick={() => {
-                          setCoverUrl(result.cover_url!);
+                          setCoverUrl(url);
                           setCoverResults([]);
                         }}
                         className={`overflow-hidden rounded-md border-2 p-0.5
                           hover:border-amber-500 transition-colors ${
-                            coverUrl === result.cover_url
+                            coverUrl === url
                               ? "border-amber-500"
                               : "border-gray-200 dark:border-gray-600"
                           }`}
                       >
                         <img
-                          src={result.cover_url}
+                          src={url}
                           alt={result.title || "Cover option"}
                           className="h-20 w-full object-contain"
                         />
                       </button>
-                    ) : null
-                  )}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -251,7 +394,7 @@ export default function AddBookForm({ open, onClose, onAdd }: AddBookFormProps) 
         <div className="mt-6 flex justify-end gap-3">
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="rounded-md px-4 py-2 text-sm font-medium text-gray-600
               hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
           >
