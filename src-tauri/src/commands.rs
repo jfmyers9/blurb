@@ -36,6 +36,7 @@ fn row_to_book(row: &rusqlite::Row) -> rusqlite::Result<Book> {
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn add_book_db(
     conn: &rusqlite::Connection,
     title: &str,
@@ -47,7 +48,7 @@ pub(crate) fn add_book_db(
     publisher: Option<&str>,
     published_date: Option<&str>,
     page_count: Option<i32>,
-) -> Result<i64, rusqlite::Error> {
+) -> Result<i64, String> {
     conn.execute(
         "INSERT INTO books (title, author, isbn, asin, cover_url, description, \
          publisher, published_date, page_count, created_at, updated_at) \
@@ -63,23 +64,31 @@ pub(crate) fn add_book_db(
             published_date,
             page_count
         ],
-    )?;
+    )
+    .map_err(|e| e.to_string())?;
     Ok(conn.last_insert_rowid())
 }
 
-pub(crate) fn list_books_db(conn: &rusqlite::Connection) -> Result<Vec<Book>, rusqlite::Error> {
-    let mut stmt = conn.prepare(&format!("{} ORDER BY b.updated_at DESC", BOOK_SELECT))?;
+pub(crate) fn list_books_db(conn: &rusqlite::Connection) -> Result<Vec<Book>, String> {
+    let mut stmt = conn
+        .prepare(&format!("{} ORDER BY b.updated_at DESC", BOOK_SELECT))
+        .map_err(|e| e.to_string())?;
     let books = stmt
-        .query_map([], row_to_book)?
-        .collect::<Result<Vec<_>, _>>()?;
+        .query_map([], row_to_book)
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
     Ok(books)
 }
 
-pub(crate) fn get_book_db(conn: &rusqlite::Connection, id: i64) -> Result<Book, rusqlite::Error> {
-    let mut stmt = conn.prepare(&format!("{} WHERE b.id = ?1", BOOK_SELECT))?;
-    stmt.query_row([id], row_to_book)
+pub(crate) fn get_book_db(conn: &rusqlite::Connection, id: i64) -> Result<Book, String> {
+    let mut stmt = conn
+        .prepare(&format!("{} WHERE b.id = ?1", BOOK_SELECT))
+        .map_err(|e| e.to_string())?;
+    stmt.query_row([id], row_to_book).map_err(|e| e.to_string())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn update_book_db(
     conn: &rusqlite::Connection,
     id: i64,
@@ -92,7 +101,7 @@ pub(crate) fn update_book_db(
     publisher: Option<&str>,
     published_date: Option<&str>,
     page_count: Option<i32>,
-) -> Result<Book, rusqlite::Error> {
+) -> Result<Book, String> {
     conn.execute(
         "UPDATE books SET title=?1, author=?2, isbn=?3, asin=?4, cover_url=?5, \
          description=?6, publisher=?7, published_date=?8, page_count=?9, \
@@ -109,12 +118,14 @@ pub(crate) fn update_book_db(
             page_count,
             id
         ],
-    )?;
+    )
+    .map_err(|e| e.to_string())?;
     get_book_db(conn, id)
 }
 
-pub(crate) fn delete_book_db(conn: &rusqlite::Connection, id: i64) -> Result<(), rusqlite::Error> {
-    conn.execute("DELETE FROM books WHERE id = ?1", [id])?;
+pub(crate) fn delete_book_db(conn: &rusqlite::Connection, id: i64) -> Result<(), String> {
+    conn.execute("DELETE FROM books WHERE id = ?1", [id])
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -122,13 +133,17 @@ pub(crate) fn set_rating_db(
     conn: &rusqlite::Connection,
     book_id: i64,
     score: i32,
-) -> Result<(), rusqlite::Error> {
+) -> Result<(), String> {
+    if !(1..=5).contains(&score) {
+        return Err(format!("Rating must be between 1 and 5, got {score}"));
+    }
     conn.execute(
         "INSERT INTO ratings (book_id, score, created_at, updated_at) \
          VALUES (?1, ?2, datetime('now'), datetime('now')) \
          ON CONFLICT(book_id) DO UPDATE SET score=?2, updated_at=datetime('now')",
         rusqlite::params![book_id, score],
-    )?;
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -136,13 +151,18 @@ pub(crate) fn set_reading_status_db(
     conn: &rusqlite::Connection,
     book_id: i64,
     status: &str,
-) -> Result<(), rusqlite::Error> {
+) -> Result<(), String> {
+    const VALID_STATUSES: &[&str] = &["want_to_read", "reading", "finished", "abandoned"];
+    if !VALID_STATUSES.contains(&status) {
+        return Err(format!("Invalid reading status: {status}"));
+    }
     conn.execute(
         "INSERT INTO reading_status (book_id, status, updated_at) \
          VALUES (?1, ?2, datetime('now')) \
          ON CONFLICT(book_id) DO UPDATE SET status=?2, updated_at=datetime('now')",
         rusqlite::params![book_id, status],
-    )?;
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -150,47 +170,55 @@ pub(crate) fn save_review_db(
     conn: &rusqlite::Connection,
     book_id: i64,
     body: &str,
-) -> Result<(), rusqlite::Error> {
+) -> Result<(), String> {
     conn.execute(
         "INSERT INTO reviews (book_id, body, created_at, updated_at) \
          VALUES (?1, ?2, datetime('now'), datetime('now')) \
          ON CONFLICT(book_id) DO UPDATE SET body=?2, updated_at=datetime('now')",
         rusqlite::params![book_id, body],
-    )?;
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
 pub(crate) fn import_kindle_books_db(
-    conn: &rusqlite::Connection,
+    conn: &mut rusqlite::Connection,
     books: &[KindleBook],
-) -> Result<Vec<i64>, rusqlite::Error> {
+) -> Result<Vec<i64>, String> {
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
     let mut ids = Vec::new();
     for book in books {
-        let exists: bool = conn.query_row(
-            "SELECT EXISTS(SELECT 1 FROM books WHERE title = ?1)",
-            [&book.title],
-            |row| row.get(0),
-        )?;
+        let exists: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM books WHERE title = ?1)",
+                [&book.title],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
         if exists {
             continue;
         }
-        conn.execute(
+        tx.execute(
             "INSERT INTO books (title, author, created_at, updated_at) \
              VALUES (?1, ?2, datetime('now'), datetime('now'))",
             rusqlite::params![book.title, book.author],
-        )?;
-        let book_id = conn.last_insert_rowid();
-        conn.execute(
+        )
+        .map_err(|e| e.to_string())?;
+        let book_id = tx.last_insert_rowid();
+        tx.execute(
             "INSERT INTO reading_status (book_id, status, updated_at) \
              VALUES (?1, 'reading', datetime('now')) \
              ON CONFLICT(book_id) DO UPDATE SET status='reading', updated_at=datetime('now')",
             [book_id],
-        )?;
+        )
+        .map_err(|e| e.to_string())?;
         ids.push(book_id);
     }
+    tx.commit().map_err(|e| e.to_string())?;
     Ok(ids)
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command(rename_all = "snake_case")]
 pub fn add_book(
     state: State<AppState>,
@@ -217,21 +245,21 @@ pub fn add_book(
         published_date.as_deref(),
         page_count,
     )
-    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn list_books(state: State<AppState>) -> Result<Vec<Book>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    list_books_db(&db).map_err(|e| e.to_string())
+    list_books_db(&db)
 }
 
 #[tauri::command]
 pub fn get_book(state: State<AppState>, id: i64) -> Result<Book, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    get_book_db(&db, id).map_err(|e| e.to_string())
+    get_book_db(&db, id)
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command(rename_all = "snake_case")]
 pub fn update_book(
     state: State<AppState>,
@@ -260,7 +288,6 @@ pub fn update_book(
         published_date.as_deref(),
         page_count,
     )
-    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -270,7 +297,7 @@ pub fn delete_book(
     id: i64,
 ) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    delete_book_db(&db, id).map_err(|e| e.to_string())?;
+    delete_book_db(&db, id)?;
 
     // Clean up cover files
     let covers_dir = app_handle
@@ -296,7 +323,7 @@ pub fn delete_book(
 #[tauri::command(rename_all = "snake_case")]
 pub fn set_rating(state: State<AppState>, book_id: i64, score: i32) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    set_rating_db(&db, book_id, score).map_err(|e| e.to_string())
+    set_rating_db(&db, book_id, score)
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -306,13 +333,13 @@ pub fn set_reading_status(
     status: String,
 ) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    set_reading_status_db(&db, book_id, &status).map_err(|e| e.to_string())
+    set_reading_status_db(&db, book_id, &status)
 }
 
 #[tauri::command(rename_all = "snake_case")]
 pub fn save_review(state: State<AppState>, book_id: i64, body: String) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    save_review_db(&db, book_id, &body).map_err(|e| e.to_string())
+    save_review_db(&db, book_id, &body)
 }
 
 #[tauri::command]
@@ -341,8 +368,8 @@ pub fn import_kindle_books(
     state: State<AppState>,
     books: Vec<KindleBook>,
 ) -> Result<Vec<i64>, String> {
-    let db = state.db.lock().map_err(|e| e.to_string())?;
-    import_kindle_books_db(&db, &books).map_err(|e| e.to_string())
+    let mut db = state.db.lock().map_err(|e| e.to_string())?;
+    import_kindle_books_db(&mut db, &books)
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -434,14 +461,13 @@ pub fn import_clippings(state: State<AppState>, mount_path: String) -> Result<us
     let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
     let clippings = crate::clippings::parse_clippings(&content);
 
-    let db = state.db.lock().map_err(|e| e.to_string())?;
+    let mut db = state.db.lock().map_err(|e| e.to_string())?;
+    let tx = db.transaction().map_err(|e| e.to_string())?;
     let mut imported = 0usize;
-
-    db.execute_batch("BEGIN").map_err(|e| e.to_string())?;
 
     for clip in &clippings {
         let normalized_title = clip.title.trim().to_lowercase();
-        let book_id: Option<i64> = db
+        let book_id: Option<i64> = tx
             .query_row(
                 "SELECT id FROM books WHERE LOWER(TRIM(title)) = ?1",
                 [&normalized_title],
@@ -457,7 +483,7 @@ pub fn import_clippings(state: State<AppState>, mount_path: String) -> Result<us
         // SQLite treats NULL != NULL, so ON CONFLICT won't catch duplicates
         // when location_start is NULL. Check manually in that case.
         if clip.location_start.is_none() {
-            let exists: bool = db
+            let exists: bool = tx
                 .query_row(
                     "SELECT EXISTS(SELECT 1 FROM highlights WHERE book_id = ?1 AND text = ?2 AND location_start IS NULL)",
                     rusqlite::params![book_id, clip.text],
@@ -469,7 +495,7 @@ pub fn import_clippings(state: State<AppState>, mount_path: String) -> Result<us
             }
         }
 
-        let result = db.execute(
+        let result = tx.execute(
             "INSERT INTO highlights (book_id, text, location_start, location_end, page, clip_type, clipped_at) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
              ON CONFLICT(book_id, text, location_start) DO NOTHING",
@@ -490,71 +516,42 @@ pub fn import_clippings(state: State<AppState>, mount_path: String) -> Result<us
         }
     }
 
-    db.execute_batch("COMMIT").map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
 
     Ok(imported)
 }
 
 #[tauri::command(rename_all = "snake_case")]
 pub async fn enrich_book(state: State<'_, AppState>, book_id: i64) -> Result<(), String> {
-    let (title, author, isbn, cover_url, description, publisher, published_date, page_count) = {
+    let (title, author) = {
         let db = state.db.lock().map_err(|e| e.to_string())?;
-        let mut stmt = db
-            .prepare(
-                "SELECT title, author, isbn, cover_url, description, publisher, \
-                 published_date, page_count FROM books WHERE id = ?1",
-            )
-            .map_err(|e| e.to_string())?;
-        stmt.query_row([book_id], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, Option<String>>(1)?,
-                row.get::<_, Option<String>>(2)?,
-                row.get::<_, Option<String>>(3)?,
-                row.get::<_, Option<String>>(4)?,
-                row.get::<_, Option<String>>(5)?,
-                row.get::<_, Option<String>>(6)?,
-                row.get::<_, Option<i32>>(7)?,
-            ))
-        })
+        db.query_row(
+            "SELECT title, author FROM books WHERE id = ?1",
+            [book_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+        )
         .map_err(|e| e.to_string())?
     };
 
     let meta = crate::metadata::search_by_title(&title, author.as_deref()).await?;
 
-    // Only fill NULL columns
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.execute(
-        "UPDATE books SET isbn = ?1, cover_url = ?2, description = ?3, \
-         publisher = ?4, published_date = ?5, page_count = ?6, \
+        "UPDATE books SET \
+         isbn = COALESCE(isbn, ?1), \
+         cover_url = COALESCE(cover_url, ?2), \
+         description = COALESCE(description, ?3), \
+         publisher = COALESCE(publisher, ?4), \
+         published_date = COALESCE(published_date, ?5), \
+         page_count = COALESCE(page_count, ?6), \
          updated_at = datetime('now') WHERE id = ?7",
         rusqlite::params![
-            if isbn.is_none() { meta.isbn } else { isbn },
-            if cover_url.is_none() {
-                meta.cover_url
-            } else {
-                cover_url
-            },
-            if description.is_none() {
-                meta.description
-            } else {
-                description
-            },
-            if publisher.is_none() {
-                meta.publisher
-            } else {
-                publisher
-            },
-            if published_date.is_none() {
-                meta.published_date
-            } else {
-                published_date
-            },
-            if page_count.is_none() {
-                meta.page_count
-            } else {
-                page_count
-            },
+            meta.isbn,
+            meta.cover_url,
+            meta.description,
+            meta.publisher,
+            meta.published_date,
+            meta.page_count,
             book_id,
         ],
     )

@@ -112,15 +112,23 @@ export default function KindleSync({
               if (!book.cover_url) booksToEnrich.push(id);
             } catch { /* skip */ }
           }
+          let failed = 0;
           for (let i = 0; i < booksToEnrich.length; i++) {
             if (cancelledRef.current) break;
             setEnrichProgress(`Enriching ${i + 1}/${booksToEnrich.length}...`);
             try {
               await enrichBook(booksToEnrich[i]);
-            } catch { /* best effort */ }
+            } catch {
+              failed++;
+            }
           }
           if (!cancelledRef.current) {
-            setEnrichProgress(null);
+            const enriched = booksToEnrich.length - failed;
+            setEnrichProgress(
+              failed > 0
+                ? `Enriched ${enriched} of ${booksToEnrich.length} (${failed} failed)`
+                : `Enriched ${enriched} of ${booksToEnrich.length}`
+            );
             onImportComplete();
           }
         })();

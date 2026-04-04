@@ -1,4 +1,3 @@
-#![allow(clippy::too_many_arguments)]
 mod clippings;
 mod commands;
 mod db;
