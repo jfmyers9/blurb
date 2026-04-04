@@ -45,6 +45,7 @@ const defaultProps = () => ({
   minRating: null,
   onMinRatingChange: vi.fn(),
   searchInputRef: { current: null },
+  onClearAll: vi.fn(),
 });
 
 describe("StatusFilterBar", () => {
@@ -93,18 +94,19 @@ describe("StatusFilterBar", () => {
 
   it("renders all sort options in the dropdown", () => {
     render(<StatusFilterBar {...defaultProps()} />);
-    const select = screen.getByRole("combobox");
-    const options = Array.from(select.querySelectorAll("option"));
+    const trigger = screen.getByLabelText("Sort by");
+    fireEvent.click(trigger);
+    const listbox = screen.getByRole("listbox");
+    const options = Array.from(listbox.querySelectorAll('[role="option"]'));
     const labels = options.map((o) => o.textContent);
     expect(labels).toEqual(["Date Added", "Title", "Author", "Rating"]);
   });
 
-  it("calls onSortChange when sort dropdown changes", () => {
+  it("calls onSortChange when sort dropdown option is clicked", () => {
     const props = defaultProps();
     render(<StatusFilterBar {...props} />);
-    fireEvent.change(screen.getByRole("combobox"), {
-      target: { value: "title" },
-    });
+    fireEvent.click(screen.getByLabelText("Sort by"));
+    fireEvent.mouseDown(screen.getByText("Title"));
     expect(props.onSortChange).toHaveBeenCalledWith("title");
   });
 
@@ -205,8 +207,8 @@ describe("StatusFilterBar", () => {
     props.books = [makeBook({ id: 1, rating: 4 })];
     render(<StatusFilterBar {...props} />);
     expect(screen.getByText("Any Rating")).toBeInTheDocument();
-    expect(screen.getByText("3+")).toBeInTheDocument();
-    expect(screen.getByText("4+")).toBeInTheDocument();
+    expect(screen.getByText(/3\+/)).toBeInTheDocument();
+    expect(screen.getByText(/4\+/)).toBeInTheDocument();
   });
 
   it("does not render rating pills when no books have ratings", () => {
@@ -220,7 +222,7 @@ describe("StatusFilterBar", () => {
     const props = defaultProps();
     props.books = [makeBook({ id: 1, rating: 4 })];
     render(<StatusFilterBar {...props} />);
-    fireEvent.click(screen.getByText("3+"));
+    fireEvent.click(screen.getByText(/3\+/));
     expect(props.onMinRatingChange).toHaveBeenCalledWith(3);
   });
 
@@ -244,5 +246,187 @@ describe("StatusFilterBar", () => {
     render(<StatusFilterBar {...props} />);
     fireEvent.click(screen.getByTitle("List view"));
     expect(props.onViewModeChange).toHaveBeenCalledWith("list");
+  });
+
+  describe("filter summary strip", () => {
+    it("renders when any filter is non-default", () => {
+      const props = defaultProps();
+      render(<StatusFilterBar {...props} activeStatus="reading" />);
+      const summary = screen.getByTestId("filter-summary");
+      expect(summary).toBeInTheDocument();
+      expect(summary).toHaveTextContent("Reading");
+    });
+
+    it("hidden when all filters at defaults", () => {
+      render(<StatusFilterBar {...defaultProps()} />);
+      expect(screen.queryByTestId("filter-summary")).not.toBeInTheDocument();
+    });
+
+    it("shows rating tag when minRating is set", () => {
+      const props = defaultProps();
+      props.books = [makeBook({ id: 1, rating: 5 })];
+      render(<StatusFilterBar {...props} minRating={3} />);
+      expect(screen.getByTestId("filter-summary")).toBeInTheDocument();
+      expect(screen.getByText(/3\+ ★/)).toBeInTheDocument();
+    });
+
+    it("shows shelf tag when activeShelf is set", () => {
+      const shelves: Shelf[] = [{ id: 1, name: "Fiction", created_at: "2024-01-01" }];
+      render(
+        <StatusFilterBar
+          {...defaultProps()}
+          shelves={shelves}
+          activeShelf={1}
+          shelfBookCounts={{ 1: 3 }}
+        />
+      );
+      const summary = screen.getByTestId("filter-summary");
+      expect(summary).toHaveTextContent("Fiction");
+    });
+
+    it("shows search tag when searchQuery is set", () => {
+      render(<StatusFilterBar {...defaultProps()} searchQuery="hello" />);
+      expect(screen.getByTestId("filter-summary")).toHaveTextContent("search: hello");
+    });
+
+    it("dismiss status resets to all", () => {
+      const props = defaultProps();
+      render(<StatusFilterBar {...props} activeStatus="finished" />);
+      fireEvent.click(screen.getByTestId("dismiss-status"));
+      expect(props.onStatusChange).toHaveBeenCalledWith("all");
+    });
+
+    it("dismiss rating resets to null", () => {
+      const props = defaultProps();
+      props.books = [makeBook({ id: 1, rating: 5 })];
+      render(<StatusFilterBar {...props} minRating={4} />);
+      fireEvent.click(screen.getByTestId("dismiss-rating"));
+      expect(props.onMinRatingChange).toHaveBeenCalledWith(null);
+    });
+
+    it("dismiss shelf resets to null", () => {
+      const props = defaultProps();
+      const shelves: Shelf[] = [{ id: 2, name: "Sci-Fi", created_at: "2024-01-01" }];
+      render(
+        <StatusFilterBar {...props} shelves={shelves} activeShelf={2} shelfBookCounts={{ 2: 1 }} />
+      );
+      fireEvent.click(screen.getByTestId("dismiss-shelf"));
+      expect(props.onShelfChange).toHaveBeenCalledWith(null);
+    });
+
+    it("dismiss search resets to empty", () => {
+      const props = defaultProps();
+      render(<StatusFilterBar {...props} searchQuery="test" />);
+      fireEvent.click(screen.getByTestId("dismiss-search"));
+      expect(props.onSearchChange).toHaveBeenCalledWith("");
+    });
+
+    it("clear all calls onClearAll", () => {
+      const props = defaultProps();
+      render(<StatusFilterBar {...props} activeStatus="reading" />);
+      fireEvent.click(screen.getByText("Clear all"));
+      expect(props.onClearAll).toHaveBeenCalled();
+    });
+
+    it("shows multiple filter tags simultaneously", () => {
+      const props = defaultProps();
+      props.books = [makeBook({ id: 1, rating: 5 })];
+      render(<StatusFilterBar {...props} activeStatus="reading" minRating={4} searchQuery="foo" />);
+      const summary = screen.getByTestId("filter-summary");
+      expect(summary).toHaveTextContent("Reading");
+      expect(summary).toHaveTextContent("4+ ★");
+      expect(summary).toHaveTextContent("search: foo");
+    });
+  });
+
+  describe("SortDropdown keyboard navigation", () => {
+    it("ArrowDown cycles through options and wraps at end", () => {
+      render(<StatusFilterBar {...defaultProps()} />);
+      const trigger = screen.getByLabelText("Sort by");
+      fireEvent.click(trigger);
+
+      // Default sort is date_added (index 0). Arrow down moves to index 1.
+      fireEvent.keyDown(trigger, { key: "ArrowDown" });
+      expect(trigger.getAttribute("aria-activedescendant")).toBe("sort-option-1");
+
+      fireEvent.keyDown(trigger, { key: "ArrowDown" });
+      expect(trigger.getAttribute("aria-activedescendant")).toBe("sort-option-2");
+
+      fireEvent.keyDown(trigger, { key: "ArrowDown" });
+      expect(trigger.getAttribute("aria-activedescendant")).toBe("sort-option-3");
+
+      // Wrap around to 0
+      fireEvent.keyDown(trigger, { key: "ArrowDown" });
+      expect(trigger.getAttribute("aria-activedescendant")).toBe("sort-option-0");
+    });
+
+    it("ArrowUp cycles through options and wraps at start", () => {
+      render(<StatusFilterBar {...defaultProps()} />);
+      const trigger = screen.getByLabelText("Sort by");
+      fireEvent.click(trigger);
+
+      // Currently at index 0 (date_added). ArrowUp wraps to last (index 3).
+      fireEvent.keyDown(trigger, { key: "ArrowUp" });
+      expect(trigger.getAttribute("aria-activedescendant")).toBe("sort-option-3");
+
+      fireEvent.keyDown(trigger, { key: "ArrowUp" });
+      expect(trigger.getAttribute("aria-activedescendant")).toBe("sort-option-2");
+    });
+
+    it("Enter selects focused option and closes dropdown", () => {
+      const props = defaultProps();
+      render(<StatusFilterBar {...props} />);
+      const trigger = screen.getByLabelText("Sort by");
+      fireEvent.click(trigger);
+
+      // Move to "Title" (index 1)
+      fireEvent.keyDown(trigger, { key: "ArrowDown" });
+      fireEvent.keyDown(trigger, { key: "Enter" });
+
+      expect(props.onSortChange).toHaveBeenCalledWith("title");
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    });
+
+    it("Escape closes dropdown without selecting", () => {
+      const props = defaultProps();
+      render(<StatusFilterBar {...props} />);
+      const trigger = screen.getByLabelText("Sort by");
+      fireEvent.click(trigger);
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+
+      fireEvent.keyDown(trigger, { key: "ArrowDown" });
+      fireEvent.keyDown(trigger, { key: "Escape" });
+
+      expect(props.onSortChange).not.toHaveBeenCalled();
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    });
+
+    it("Space opens dropdown when closed", () => {
+      render(<StatusFilterBar {...defaultProps()} />);
+      const trigger = screen.getByLabelText("Sort by");
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+
+      fireEvent.keyDown(trigger, { key: " " });
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+    });
+
+    it("Enter opens dropdown when closed", () => {
+      render(<StatusFilterBar {...defaultProps()} />);
+      const trigger = screen.getByLabelText("Sort by");
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+
+      fireEvent.keyDown(trigger, { key: "Enter" });
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+    });
+
+    it("outside click closes dropdown", () => {
+      render(<StatusFilterBar {...defaultProps()} />);
+      const trigger = screen.getByLabelText("Sort by");
+      fireEvent.click(trigger);
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+
+      fireEvent.mouseDown(document.body);
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    });
   });
 });

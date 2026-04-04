@@ -358,6 +358,12 @@ function App() {
               searchInputRef={searchInputRef}
               viewMode={viewMode}
               onViewModeChange={changeViewMode}
+              onClearAll={() => {
+                setActiveStatus("all");
+                setMinRating(null);
+                setActiveShelf(null);
+                setSearchQuery("");
+              }}
             />
             {filteredBooks.length === 0 ? (
               <div className="flex flex-1 flex-col items-center justify-center py-24 text-center">
