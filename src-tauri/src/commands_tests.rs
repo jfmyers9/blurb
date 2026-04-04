@@ -236,7 +236,7 @@ fn test_save_review() {
 
 #[test]
 fn test_import_kindle_skips_duplicates() {
-    let conn = test_conn();
+    let mut conn = test_conn();
     add_book_db(
         &conn,
         "Existing Book",
@@ -286,7 +286,7 @@ fn test_import_kindle_skips_duplicates() {
         },
     ];
 
-    let ids = import_kindle_books_db(&conn, &kindle_books).unwrap();
+    let ids = import_kindle_books_db(&mut conn, &kindle_books).unwrap();
     assert_eq!(ids.len(), 1, "should only import the new book");
 
     let new_book = get_book_db(&conn, ids[0]).unwrap();

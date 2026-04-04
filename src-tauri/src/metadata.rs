@@ -4,6 +4,7 @@ use std::time::Duration;
 
 static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     reqwest::Client::builder()
+        .user_agent("Blurb/0.1.0 (book library app)")
         .timeout(Duration::from_secs(10))
         .build()
         .expect("failed to build HTTP client")
@@ -76,6 +77,8 @@ async fn open_library(isbn: &str) -> Result<BookMetadata, String> {
         .get(&url)
         .send()
         .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
         .map_err(|e| e.to_string())?
         .json()
         .await
@@ -188,6 +191,8 @@ pub async fn search_covers(query: &str) -> Result<Vec<BookMetadata>, String> {
         .send()
         .await
         .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
         .json()
         .await
         .map_err(|e| e.to_string())?;
@@ -246,6 +251,8 @@ async fn search_by_title_open_library(
         .send()
         .await
         .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
         .json()
         .await
         .map_err(|e| e.to_string())?;
@@ -288,6 +295,8 @@ async fn search_by_title_google(title: &str, author: Option<&str>) -> Result<Boo
         .send()
         .await
         .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
         .json()
         .await
         .map_err(|e| e.to_string())?;
@@ -327,6 +336,8 @@ async fn google_books(isbn: &str) -> Result<BookMetadata, String> {
         .get(&url)
         .send()
         .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
         .map_err(|e| e.to_string())?
         .json()
         .await

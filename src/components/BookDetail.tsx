@@ -189,8 +189,8 @@ export default function BookDetail({
                           filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp"] }],
                         });
                         if (file) {
-                          await uploadCover(book.id, file);
-                          onCoverChange(book.id, file);
+                          const destPath = await uploadCover(book.id, file);
+                          onCoverChange(book.id, destPath);
                           setCoverMode(null);
                         }
                       }}

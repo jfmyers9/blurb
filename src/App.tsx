@@ -321,6 +321,7 @@ function App() {
       {/* Detail panel */}
       {selectedBook && (
         <BookDetail
+          key={selectedBook.id}
           book={selectedBook}
           onClose={() => setSelectedBook(null)}
           onUpdate={handleUpdate}

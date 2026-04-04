@@ -23,6 +23,12 @@ export default function ReviewPage({ bookId, onClose, onSave }: ReviewPageProps)
   const editorContentRef = useRef<string | null>(null);
 
   useEffect(() => {
+    const backup = localStorage.getItem(`review-backup-${bookId}`);
+    if (backup) {
+      saveReview(bookId, backup).then(() => {
+        localStorage.removeItem(`review-backup-${bookId}`);
+      });
+    }
     getBook(bookId).then(setBook);
   }, [bookId]);
 
@@ -32,6 +38,7 @@ export default function ReviewPage({ bookId, onClose, onSave }: ReviewPageProps)
       try {
         await saveReview(bookId, json);
         dirtyRef.current = false;
+        localStorage.removeItem(`review-backup-${bookId}`);
         setSaveStatus("saved");
         onSave?.();
         savedTimerRef.current = setTimeout(() => setSaveStatus("idle"), 1500);
@@ -58,6 +65,7 @@ export default function ReviewPage({ bookId, onClose, onSave }: ReviewPageProps)
       if (timerRef.current) clearTimeout(timerRef.current);
       if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
       if (dirtyRef.current && editorContentRef.current) {
+        localStorage.setItem(`review-backup-${bookId}`, editorContentRef.current);
         saveReview(bookId, editorContentRef.current);
         onSave?.();
       }

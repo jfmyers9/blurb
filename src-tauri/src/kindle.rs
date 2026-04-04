@@ -81,7 +81,7 @@ pub fn list_kindle_books(mount_path: &str) -> Vec<KindleBook> {
     };
 
     let mut books = Vec::new();
-    scan_dir(&docs_dir, &mut books);
+    scan_dir(&docs_dir, &mut books, 0);
     books
 }
 
@@ -201,7 +201,10 @@ struct MobiFields {
     cde_type: Option<String>,
 }
 
-fn scan_dir(dir: &Path, books: &mut Vec<KindleBook>) {
+fn scan_dir(dir: &Path, books: &mut Vec<KindleBook>, depth: u32) {
+    if depth > 10 {
+        return;
+    }
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
@@ -209,6 +212,9 @@ fn scan_dir(dir: &Path, books: &mut Vec<KindleBook>) {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
+            if path.is_symlink() {
+                continue;
+            }
             let dir_name = path
                 .file_name()
                 .unwrap_or_default()
@@ -217,7 +223,7 @@ fn scan_dir(dir: &Path, books: &mut Vec<KindleBook>) {
             if SKIP_DIRS.iter().any(|s| dir_name.ends_with(s)) {
                 continue;
             }
-            scan_dir(&path, books);
+            scan_dir(&path, books, depth + 1);
             continue;
         }
 
@@ -315,16 +321,21 @@ fn strip_asin_suffix(name: &str) -> (&str, Option<&str>) {
     // ASINs are 10 chars starting with B0
     if let Some(idx) = name.rfind("_B0") {
         let suffix = &name[idx + 1..];
-        if suffix.len() >= 10 && suffix[..10].chars().all(|c| c.is_ascii_alphanumeric()) {
-            return (name[..idx].trim(), Some(&suffix[..10]));
+        if suffix.len() >= 10 {
+            if let Some(asin_slice) = suffix.get(..10) {
+                if asin_slice.chars().all(|c| c.is_ascii_alphanumeric()) {
+                    return (name[..idx].trim(), Some(asin_slice));
+                }
+            }
         }
     }
     if let Some(idx) = name.rfind(" (B0") {
         if name.ends_with(')') {
             let asin_start = idx + 2;
-            let asin_end = name.len() - 1;
-            if asin_end - asin_start >= 10 {
-                return (name[..idx].trim(), Some(&name[asin_start..asin_start + 10]));
+            if let Some(asin_slice) = name.get(asin_start..asin_start + 10) {
+                if asin_slice.chars().all(|c| c.is_ascii_alphanumeric()) {
+                    return (name[..idx].trim(), Some(asin_slice));
+                }
             }
         }
     }

@@ -67,3 +67,11 @@ fn parse_strips_asin_from_both() {
     assert_eq!(author, Some("Author".to_string()));
     assert_eq!(asin, Some("B0ABCDEFGH".to_string()));
 }
+
+#[test]
+fn strip_asin_multibyte_no_panic() {
+    // Multibyte chars before ASIN marker — slicing at byte 10 could hit mid-char
+    let (name, asin) = strip_asin_suffix("日本語_B0ABCDEFGH");
+    assert_eq!(name, "日本語");
+    assert_eq!(asin, Some("B0ABCDEFGH"));
+}
