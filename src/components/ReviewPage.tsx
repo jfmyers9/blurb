@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
+import { sharedExtensions } from "../lib/editorExtensions";
 import { getBook, saveReview, type Book } from "../lib/api";
 import { coverSrc } from "../lib/cover";
 import { parseReviewContent } from "../lib/reviewParser";
@@ -67,7 +67,7 @@ export default function ReviewPage({ bookId, onClose, onSave }: ReviewPageProps)
   const editor = useEditor(
     {
       extensions: [
-        StarterKit,
+        ...sharedExtensions,
         Placeholder.configure({ placeholder: "Write your thoughts..." }),
       ],
       content: book ? parseReviewContent(book.review) : undefined,
@@ -77,6 +77,8 @@ export default function ReviewPage({ bookId, onClose, onSave }: ReviewPageProps)
     },
     [book]
   );
+
+  const wordCount = editor?.getText().split(/\s+/).filter(Boolean).length ?? 0;
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-white dark:bg-gray-900">
@@ -131,10 +133,7 @@ export default function ReviewPage({ bookId, onClose, onSave }: ReviewPageProps)
 
       {/* Word count */}
       <div className="flex items-center justify-end px-6 py-2 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-400">
-        {(() => {
-          const count = editor?.getText().split(/\s+/).filter(Boolean).length ?? 0;
-          return `${count} ${count === 1 ? "word" : "words"}`;
-        })()}
+        {`${wordCount} ${wordCount === 1 ? "word" : "words"}`}
       </div>
     </div>
   );

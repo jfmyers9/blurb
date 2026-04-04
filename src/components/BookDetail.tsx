@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { generateHTML } from "@tiptap/html";
-import StarterKit from "@tiptap/starter-kit";
+import { sharedExtensions } from "../lib/editorExtensions";
 import type { Book, BookMetadata, Highlight } from "../lib/api";
 import { searchCovers, uploadCover, listHighlights, enrichBook } from "../lib/api";
 import { coverSrc } from "../lib/cover";
@@ -405,7 +405,7 @@ export default function BookDetail({
               (() => {
                 try {
                   const doc = JSON.parse(book.review);
-                  const html = generateHTML(doc, [StarterKit]);
+                  const html = generateHTML(doc, sharedExtensions);
                   return (
                     <div
                       className="prose prose-sm dark:prose-invert line-clamp-4 text-gray-600 dark:text-gray-400"
