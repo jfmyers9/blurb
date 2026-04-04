@@ -160,8 +160,11 @@ struct OLSearchDoc {
     title: Option<String>,
     author_name: Option<Vec<String>>,
     cover_i: Option<i64>,
-    #[allow(dead_code)]
     isbn: Option<Vec<String>>,
+    key: Option<String>,
+    publisher: Option<Vec<String>>,
+    first_publish_year: Option<i32>,
+    number_of_pages_median: Option<i32>,
 }
 
 #[derive(Deserialize)]
@@ -183,7 +186,7 @@ struct OLTitleSearchDoc {
 pub async fn search_covers(query: &str) -> Result<Vec<BookMetadata>, String> {
     let client = HTTP_CLIENT.clone();
     let url = format!(
-        "https://openlibrary.org/search.json?q={}&fields=title,author_name,cover_i,isbn&limit=5",
+        "https://openlibrary.org/search.json?q={}&fields=title,author_name,cover_i,isbn,publisher,first_publish_year,number_of_pages_median,key&limit=5",
         urlencoding::encode(query)
     );
     let resp: OLSearchResponse = client
@@ -195,10 +198,14 @@ pub async fn search_covers(query: &str) -> Result<Vec<BookMetadata>, String> {
         .await
         .map_err(|e| e.to_string())?;
 
+    let mut seen_keys = std::collections::HashSet::new();
     let results = resp
         .docs
         .unwrap_or_default()
         .into_iter()
+        .filter(|doc| {
+            doc.key.as_ref().is_none_or(|k| seen_keys.insert(k.clone()))
+        })
         .map(|doc| BookMetadata {
             title: doc.title,
             author: doc.author_name.as_ref().and_then(|a| a.first().cloned()),
@@ -206,10 +213,10 @@ pub async fn search_covers(query: &str) -> Result<Vec<BookMetadata>, String> {
                 .cover_i
                 .map(|id| format!("https://covers.openlibrary.org/b/id/{}-L.jpg", id)),
             description: None,
-            publisher: None,
-            published_date: None,
-            page_count: None,
-            isbn: None,
+            publisher: doc.publisher.and_then(|p| p.into_iter().next()),
+            published_date: doc.first_publish_year.map(|y| y.to_string()),
+            page_count: doc.number_of_pages_median,
+            isbn: doc.isbn.and_then(|i| i.into_iter().next()),
         })
         .collect();
 

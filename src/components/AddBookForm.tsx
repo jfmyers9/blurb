@@ -30,6 +30,11 @@ export default function AddBookForm({ open, onClose, onAdd }: AddBookFormProps) 
   const [coverUrl, setCoverUrl] = useState("");
   const [coverResults, setCoverResults] = useState<BookMetadata[]>([]);
   const [searchingCovers, setSearchingCovers] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<BookMetadata[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchDone, setSearchDone] = useState(false);
 
   if (!open) return null;
 
@@ -71,6 +76,11 @@ export default function AddBookForm({ open, onClose, onAdd }: AddBookFormProps) 
       setLookupError(null);
       setCoverUrl("");
       setCoverResults([]);
+      setSearchQuery("");
+      setSearchResults([]);
+      setSearching(false);
+      setSearchError(null);
+      setSearchDone(false);
       onClose();
     } finally {
       setSubmitting(false);
@@ -95,6 +105,120 @@ export default function AddBookForm({ open, onClose, onAdd }: AddBookFormProps) 
         </h2>
 
         <div className="space-y-3">
+          {/* Book search */}
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Search books
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSearchQuery(val);
+                  if (!val.trim()) {
+                    setSearchResults([]);
+                    setSearchDone(false);
+                    setSearchError(null);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    if (searchQuery.trim() && !searching) {
+                      setSearching(true);
+                      setSearchResults([]);
+                      setSearchError(null);
+                      setSearchDone(false);
+                      searchCovers(searchQuery.trim())
+                        .then((results) => { setSearchResults(results); setSearchDone(true); })
+                        .catch((err) => setSearchError(err instanceof Error ? err.message : String(err)))
+                        .finally(() => setSearching(false));
+                    }
+                  }
+                }}
+                placeholder="Search by title or author…"
+                className="flex-1 rounded-md border border-gray-300 bg-white px-3
+                  py-2 text-sm text-gray-900 dark:border-gray-600
+                  dark:bg-gray-700 dark:text-gray-100 focus:ring-2
+                  focus:ring-amber-500 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (!searchQuery.trim()) return;
+                  setSearching(true);
+                  setSearchResults([]);
+                  setSearchError(null);
+                  setSearchDone(false);
+                  searchCovers(searchQuery.trim())
+                    .then((results) => { setSearchResults(results); setSearchDone(true); })
+                    .catch((err) => setSearchError(err instanceof Error ? err.message : String(err)))
+                    .finally(() => setSearching(false));
+                }}
+                disabled={searching || !searchQuery.trim()}
+                className="rounded-md bg-gray-100 px-3 py-2 text-sm font-medium
+                  text-gray-700 hover:bg-gray-200 disabled:opacity-50
+                  disabled:cursor-not-allowed dark:bg-gray-600
+                  dark:text-gray-200 dark:hover:bg-gray-500"
+              >
+                {searching ? "Searching…" : "Search"}
+              </button>
+            </div>
+            {searchResults.length > 0 && (
+              <ul className="mt-2 max-h-52 overflow-y-auto rounded-md border
+                border-gray-200 dark:border-gray-600">
+                {searchResults.map((result, i) => (
+                  <li key={i}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (result.title) setTitle(result.title);
+                        if (result.author) setAuthor(result.author);
+                        if (result.isbn) setIsbn(result.isbn);
+                        if (result.cover_url) setCoverUrl(result.cover_url);
+                        setMetadata(result);
+                        setSearchResults([]);
+                        setSearchDone(false);
+                      }}
+                      className="flex w-full items-center gap-3 px-3 py-2 text-left
+                        text-sm hover:bg-gray-100 dark:hover:bg-gray-700
+                        text-gray-900 dark:text-gray-100"
+                    >
+                      {result.cover_url ? (
+                        <img
+                          src={result.cover_url}
+                          alt=""
+                          className="h-10 w-7 flex-shrink-0 rounded object-cover"
+                        />
+                      ) : (
+                        <div className="h-10 w-7 flex-shrink-0 rounded bg-gray-200
+                          dark:bg-gray-600" />
+                      )}
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">
+                          {result.title || "Untitled"}
+                        </p>
+                        {result.author && (
+                          <p className="truncate text-xs text-gray-500 dark:text-gray-400">
+                            {result.author}
+                          </p>
+                        )}
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {searchError && (
+              <p className="mt-1 text-xs text-red-500">{searchError}</p>
+            )}
+            {searchDone && searchResults.length === 0 && !searchError && (
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">No results found</p>
+            )}
+          </div>
+
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
               ISBN
