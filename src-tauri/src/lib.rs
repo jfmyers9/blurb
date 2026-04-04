@@ -3,6 +3,7 @@ mod commands;
 mod db;
 mod kindle;
 mod metadata;
+pub(crate) mod migrations;
 mod models;
 
 use std::sync::Mutex;

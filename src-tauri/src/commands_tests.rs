@@ -3,7 +3,7 @@ use crate::kindle::KindleBook;
 
 fn test_conn() -> rusqlite::Connection {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
-    crate::db::init_schema(&conn).unwrap();
+    crate::migrations::run_migrations(&conn).unwrap();
     conn
 }
 
