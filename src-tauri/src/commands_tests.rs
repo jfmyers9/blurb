@@ -958,7 +958,7 @@ fn test_reading_status_dates() {
     let id = add_book_db(&conn, "Dated", None, None, None, None, None, None, None, None).unwrap();
 
     // Set to "reading" → started_at should be set
-    set_reading_status_db(&conn, id, "reading").unwrap();
+    set_reading_status_db(&conn, id, "reading", None, None).unwrap();
     let row: (Option<String>, Option<String>) = conn
         .query_row(
             "SELECT started_at, finished_at FROM reading_status WHERE book_id = ?1",
@@ -971,7 +971,7 @@ fn test_reading_status_dates() {
     let original_started = row.0.unwrap();
 
     // Set to "finished" → finished_at set, started_at preserved
-    set_reading_status_db(&conn, id, "finished").unwrap();
+    set_reading_status_db(&conn, id, "finished", None, None).unwrap();
     let row: (Option<String>, Option<String>) = conn
         .query_row(
             "SELECT started_at, finished_at FROM reading_status WHERE book_id = ?1",
@@ -983,7 +983,7 @@ fn test_reading_status_dates() {
     assert!(row.1.is_some(), "finished_at should be set");
 
     // Set back to "reading" → finished_at cleared
-    set_reading_status_db(&conn, id, "reading").unwrap();
+    set_reading_status_db(&conn, id, "reading", None, None).unwrap();
     let row: (Option<String>, Option<String>) = conn
         .query_row(
             "SELECT started_at, finished_at FROM reading_status WHERE book_id = ?1",
