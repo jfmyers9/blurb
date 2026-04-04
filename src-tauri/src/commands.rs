@@ -149,6 +149,24 @@ pub(crate) fn set_rating_db(
     Ok(())
 }
 
+fn valid_date(d: &str) -> Result<(), String> {
+    if d.len() != 10
+        || d.as_bytes().get(4) != Some(&b'-')
+        || d.as_bytes().get(7) != Some(&b'-')
+        || !d[..4].chars().all(|c| c.is_ascii_digit())
+        || !d[5..7].chars().all(|c| c.is_ascii_digit())
+        || !d[8..10].chars().all(|c| c.is_ascii_digit())
+    {
+        return Err(format!("Invalid date format (expected YYYY-MM-DD): {d}"));
+    }
+    let month: u32 = d[5..7].parse().unwrap();
+    let day: u32 = d[8..10].parse().unwrap();
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return Err(format!("Invalid date (month/day out of range): {d}"));
+    }
+    Ok(())
+}
+
 pub(crate) fn set_reading_status_db(
     conn: &rusqlite::Connection,
     book_id: i64,
@@ -160,18 +178,6 @@ pub(crate) fn set_reading_status_db(
     if !VALID_STATUSES.contains(&status) {
         return Err(format!("Invalid reading status: {status}"));
     }
-    fn valid_date(d: &str) -> Result<(), String> {
-        if d.len() != 10
-            || d.as_bytes().get(4) != Some(&b'-')
-            || d.as_bytes().get(7) != Some(&b'-')
-            || !d[..4].chars().all(|c| c.is_ascii_digit())
-            || !d[5..7].chars().all(|c| c.is_ascii_digit())
-            || !d[8..10].chars().all(|c| c.is_ascii_digit())
-        {
-            return Err(format!("Invalid date format (expected YYYY-MM-DD): {d}"));
-        }
-        Ok(())
-    }
     if let Some(d) = started_at {
         valid_date(d)?;
     }
@@ -179,17 +185,17 @@ pub(crate) fn set_reading_status_db(
         valid_date(d)?;
     }
 
+    let today = || -> Result<String, String> {
+        conn.query_row("SELECT date('now')", [], |r| r.get(0))
+            .map_err(|e| e.to_string())
+    };
+
     match status {
         "reading" => {
-            let started = started_at.map_or_else(
-                || {
-                    let d: String = conn
-                        .query_row("SELECT date('now')", [], |r| r.get(0))
-                        .map_err(|e| e.to_string())?;
-                    Ok::<_, String>(d)
-                },
-                |d| Ok(d.to_string()),
-            )?;
+            let started = match started_at {
+                Some(d) => d.to_string(),
+                None => today()?,
+            };
             conn.execute(
                 "INSERT INTO reading_status (book_id, status, started_at, finished_at, updated_at) \
                  VALUES (?1, ?2, ?3, NULL, datetime('now')) \
@@ -199,16 +205,10 @@ pub(crate) fn set_reading_status_db(
             )
         }
         "finished" | "abandoned" => {
-            let finished = finished_at.map_or_else(
-                || {
-                    let d: String = conn
-                        .query_row("SELECT date('now')", [], |r| r.get(0))
-                        .map_err(|e| e.to_string())?;
-                    Ok::<_, String>(d)
-                },
-                |d| Ok(d.to_string()),
-            )?;
-            // Preserve existing started_at unless explicitly overridden
+            let finished = match finished_at {
+                Some(d) => d.to_string(),
+                None => today()?,
+            };
             let started_override = started_at.map(|s| s.to_string());
             conn.execute(
                 "INSERT INTO reading_status (book_id, status, started_at, finished_at, updated_at) \
@@ -230,6 +230,27 @@ pub(crate) fn set_reading_status_db(
             )
         }
     }
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub(crate) fn update_reading_dates_db(
+    conn: &rusqlite::Connection,
+    book_id: i64,
+    started_at: Option<&str>,
+    finished_at: Option<&str>,
+) -> Result<(), String> {
+    if let Some(d) = started_at {
+        valid_date(d)?;
+    }
+    if let Some(d) = finished_at {
+        valid_date(d)?;
+    }
+    conn.execute(
+        "UPDATE reading_status SET started_at=?2, finished_at=?3, updated_at=datetime('now') \
+         WHERE book_id=?1",
+        rusqlite::params![book_id, started_at, finished_at],
+    )
     .map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -411,6 +432,17 @@ pub fn set_reading_status(
         started_at.as_deref(),
         finished_at.as_deref(),
     )
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn update_reading_dates(
+    state: State<AppState>,
+    book_id: i64,
+    started_at: Option<String>,
+    finished_at: Option<String>,
+) -> Result<(), String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    update_reading_dates_db(&db, book_id, started_at.as_deref(), finished_at.as_deref())
 }
 
 #[tauri::command(rename_all = "snake_case")]

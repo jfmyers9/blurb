@@ -111,11 +111,14 @@ export async function setReadingStatus(
 
 export async function updateReadingDates(
   book_id: number,
-  status: string,
   started_at: string | null,
   finished_at: string | null
 ): Promise<void> {
-  return setReadingStatus(book_id, status, started_at, finished_at);
+  return invoke<void>("update_reading_dates", {
+    book_id,
+    started_at,
+    finished_at,
+  });
 }
 
 export interface BookMetadata {

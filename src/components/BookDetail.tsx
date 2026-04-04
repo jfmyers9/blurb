@@ -412,9 +412,13 @@ export default function BookDetail({
                   type="date"
                   value={book.started_at ?? ""}
                   onChange={async (e) => {
-                    const val = e.target.value || null;
-                    await updateReadingDates(book.id, book.status!, val, book.finished_at);
-                    await onRefresh(book.id);
+                    try {
+                      const val = e.target.value || null;
+                      await updateReadingDates(book.id, val, book.finished_at);
+                      await onRefresh(book.id);
+                    } catch (err) {
+                      console.error("Failed to update reading date:", err);
+                    }
                   }}
                   className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5
                     text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800
@@ -429,9 +433,13 @@ export default function BookDetail({
                   type="date"
                   value={book.finished_at ?? ""}
                   onChange={async (e) => {
-                    const val = e.target.value || null;
-                    await updateReadingDates(book.id, book.status!, book.started_at, val);
-                    await onRefresh(book.id);
+                    try {
+                      const val = e.target.value || null;
+                      await updateReadingDates(book.id, book.started_at, val);
+                      await onRefresh(book.id);
+                    } catch (err) {
+                      console.error("Failed to update reading date:", err);
+                    }
                   }}
                   className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5
                     text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800

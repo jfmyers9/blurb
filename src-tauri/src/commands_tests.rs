@@ -709,3 +709,109 @@ fn test_import_kindle_sets_started_at() {
     assert!(started.is_some(), "kindle import should set started_at");
     assert_eq!(finished, None);
 }
+
+#[test]
+fn test_abandoned_sets_finished_at() {
+    let conn = test_conn();
+    let id = add_book_db(
+        &conn, "Abandon", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    set_reading_status_db(&conn, id, "reading", Some("2025-01-01"), None).unwrap();
+    set_reading_status_db(&conn, id, "abandoned", None, None).unwrap();
+
+    let (started, finished) = get_reading_dates(&conn, id);
+    assert_eq!(started, Some("2025-01-01".to_string()), "started_at preserved");
+    assert!(finished.is_some(), "abandoned should auto-set finished_at");
+}
+
+#[test]
+fn test_book_dates_via_get_book_db() {
+    let conn = test_conn();
+    let id = add_book_db(
+        &conn, "GetBook", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    set_reading_status_db(&conn, id, "reading", None, None).unwrap();
+    set_reading_status_db(&conn, id, "finished", None, None).unwrap();
+
+    let book = get_book_db(&conn, id).unwrap();
+    assert!(book.started_at.is_some(), "started_at visible through get_book_db");
+    assert!(book.finished_at.is_some(), "finished_at visible through get_book_db");
+}
+
+#[test]
+fn test_semantic_date_validation() {
+    let conn = test_conn();
+    let id = add_book_db(
+        &conn, "DateVal", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    assert!(set_reading_status_db(&conn, id, "reading", Some("2025-13-15"), None).is_err());
+    assert!(set_reading_status_db(&conn, id, "reading", Some("2025-00-15"), None).is_err());
+    assert!(set_reading_status_db(&conn, id, "reading", Some("2025-06-00"), None).is_err());
+    assert!(set_reading_status_db(&conn, id, "reading", Some("2025-06-32"), None).is_err());
+    assert!(set_reading_status_db(&conn, id, "reading", Some("2025-06-15"), None).is_ok());
+}
+
+#[test]
+fn test_simultaneous_date_override() {
+    let conn = test_conn();
+    let id = add_book_db(
+        &conn, "SimDate", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    set_reading_status_db(&conn, id, "reading", None, None).unwrap();
+    set_reading_status_db(&conn, id, "finished", Some("2024-01-01"), Some("2024-12-31")).unwrap();
+
+    let (started, finished) = get_reading_dates(&conn, id);
+    assert_eq!(started, Some("2024-01-01".to_string()));
+    assert_eq!(finished, Some("2024-12-31".to_string()));
+}
+
+#[test]
+fn test_update_reading_dates_clears_dates() {
+    let conn = test_conn();
+    let id = add_book_db(
+        &conn, "Clear", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    set_reading_status_db(&conn, id, "reading", None, None).unwrap();
+    set_reading_status_db(&conn, id, "finished", None, None).unwrap();
+
+    let (started, finished) = get_reading_dates(&conn, id);
+    assert!(started.is_some());
+    assert!(finished.is_some());
+
+    update_reading_dates_db(&conn, id, None, None).unwrap();
+
+    let (started, finished) = get_reading_dates(&conn, id);
+    assert_eq!(started, None, "update_reading_dates_db should clear started_at");
+    assert_eq!(finished, None, "update_reading_dates_db should clear finished_at");
+}
+
+#[test]
+fn test_update_reading_dates_sets_independently() {
+    let conn = test_conn();
+    let id = add_book_db(
+        &conn, "Indep", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    set_reading_status_db(&conn, id, "reading", None, None).unwrap();
+
+    update_reading_dates_db(&conn, id, Some("2020-05-15"), Some("2020-06-20")).unwrap();
+    let (started, finished) = get_reading_dates(&conn, id);
+    assert_eq!(started, Some("2020-05-15".to_string()));
+    assert_eq!(finished, Some("2020-06-20".to_string()));
+
+    update_reading_dates_db(&conn, id, None, Some("2020-06-20")).unwrap();
+    let (started, finished) = get_reading_dates(&conn, id);
+    assert_eq!(started, None, "started_at cleared independently");
+    assert_eq!(finished, Some("2020-06-20".to_string()), "finished_at preserved");
+}

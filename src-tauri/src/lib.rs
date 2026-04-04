@@ -32,6 +32,7 @@ pub fn run() {
             commands::delete_book,
             commands::set_rating,
             commands::set_reading_status,
+            commands::update_reading_dates,
             commands::save_review,
             commands::lookup_isbn,
             commands::search_covers,
