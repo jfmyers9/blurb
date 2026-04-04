@@ -740,18 +740,19 @@ pub fn search_highlights(
     query: String,
 ) -> Result<Vec<HighlightSearchResult>, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
+    let escaped = query.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
     let mut stmt = db
         .prepare(
             "SELECT h.id, h.book_id, h.text, h.location_start, h.location_end, h.page, \
              h.clip_type, h.clipped_at, h.created_at, b.title, b.author \
              FROM highlights h JOIN books b ON h.book_id = b.id \
-             WHERE h.text LIKE '%' || ?1 || '%' \
+             WHERE h.text LIKE '%' || ?1 || '%' ESCAPE '\\' \
              ORDER BY h.clipped_at DESC LIMIT 20",
         )
         .map_err(|e| e.to_string())?;
 
     let results = stmt
-        .query_map([&query], |row| {
+        .query_map([&escaped], |row| {
             Ok(HighlightSearchResult {
                 id: row.get(0)?,
                 book_id: row.get(1)?,

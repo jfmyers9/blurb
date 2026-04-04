@@ -21,6 +21,12 @@ function addRecentKey(key: string) {
   localStorage.setItem(RECENT_KEY, JSON.stringify(keys.slice(0, MAX_RECENT)));
 }
 
+type ResultItem =
+  | { type: "command"; data: Command }
+  | { type: "book"; data: Book }
+  | { type: "diary"; data: DiaryEntry }
+  | { type: "highlight"; data: HighlightSearchResult };
+
 interface CommandPaletteProps {
   isOpen: boolean;
   onClose: () => void;
@@ -42,18 +48,14 @@ export default function CommandPalette({
   const [diaryEntries, setDiaryEntries] = useState<DiaryEntry[]>([]);
   const [highlights, setHighlights] = useState<HighlightSearchResult[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const diaryLoadedRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
     if (isOpen) {
       requestAnimationFrame(() => inputRef.current?.focus());
-      if (!diaryLoadedRef.current) {
-        listDiaryEntries().then((entries) => {
-          setDiaryEntries(entries);
-          diaryLoadedRef.current = true;
-        });
-      }
+      listDiaryEntries().then((entries) => {
+        setDiaryEntries(entries);
+      }).catch(() => {});
     } else {
       setQuery("");
       setHighlights([]);
@@ -65,7 +67,7 @@ export default function CommandPalette({
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (query.length >= 3) {
       debounceRef.current = setTimeout(() => {
-        searchHighlights(query).then(setHighlights);
+        searchHighlights(query).then(setHighlights).catch(() => setHighlights([]));
       }, 250);
     } else {
       setHighlights([]);
@@ -101,18 +103,14 @@ export default function CommandPalette({
       )
     : [];
 
-  type ResultItem =
-    | { type: "command"; data: Command }
-    | { type: "book"; data: Book }
-    | { type: "diary"; data: DiaryEntry }
-    | { type: "highlight"; data: HighlightSearchResult };
-
   // Build recent items when query is empty
   const recentItems: ResultItem[] = [];
   if (!query) {
     const recentKeys = getRecentKeys();
     for (const key of recentKeys) {
-      const [type, id] = key.split("-", 2);
+      const sepIdx = key.indexOf("-");
+      const type = key.slice(0, sepIdx);
+      const id = key.slice(sepIdx + 1);
       if (type === "command") {
         const cmd = commands.find((c) => c.id === id);
         if (cmd) recentItems.push({ type: "command", data: cmd });
@@ -210,7 +208,10 @@ export default function CommandPalette({
 
   if (!isOpen) return null;
 
-  let flatIndex = 0;
+  const sectionOffsets = sections.reduce<number[]>((acc, s, i) => {
+    acc.push(i === 0 ? 0 : acc[i - 1] + sections[i - 1].items.length);
+    return acc;
+  }, []);
 
   return (
     <div
@@ -257,13 +258,13 @@ export default function CommandPalette({
               Start typing to search...
             </div>
           ) : (
-            sections.map((section) => (
+            sections.map((section, sectionIdx) => (
               <div key={section.label}>
                 <div className="px-2 pb-1 pt-2 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
                   {section.label}
                 </div>
-                {section.items.map((item) => {
-                  const idx = flatIndex++;
+                {section.items.map((item, itemIdx) => {
+                  const idx = sectionOffsets[sectionIdx] + itemIdx;
                   return (
                     <button
                       key={itemKey(item)}
@@ -314,11 +315,7 @@ function ResultContent({
   item,
   query,
 }: {
-  item:
-    | { type: "command"; data: Command }
-    | { type: "book"; data: Book }
-    | { type: "diary"; data: DiaryEntry }
-    | { type: "highlight"; data: HighlightSearchResult };
+  item: ResultItem;
   query: string;
 }) {
   switch (item.type) {
