@@ -583,6 +583,7 @@ export default function BookDetail({
           {diaryForm && (
             <DiaryEntryForm
               bookId={book.id}
+              bookTitle={book.title}
               entry={diaryForm.mode === "edit" ? diaryForm.entry : undefined}
               onSave={() => refreshDiaryEntries()}
               onClose={() => setDiaryForm(null)}
