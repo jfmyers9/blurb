@@ -258,15 +258,15 @@ fn test_import_kindle_skips_duplicates() {
         },
     ];
 
-    let ids = import_kindle_books_db(&mut conn, &kindle_books).unwrap();
+    let ids = import_kindle_books_db(&mut conn, &kindle_books, None).unwrap();
     assert_eq!(ids.len(), 1, "should only import the new book");
 
     let new_book = get_book_db(&conn, ids[0]).unwrap();
     assert_eq!(new_book.title, "New Book");
     assert_eq!(
         new_book.status,
-        Some("reading".to_string()),
-        "imported books get 'reading' status"
+        Some("want_to_read".to_string()),
+        "imported books get 'want_to_read' status"
     );
 
     let total: i64 = conn
@@ -684,9 +684,9 @@ fn test_import_kindle_sets_started_at() {
         size_bytes: 1000,
     }];
 
-    let ids = import_kindle_books_db(&mut conn, &kindle_books).unwrap();
+    let ids = import_kindle_books_db(&mut conn, &kindle_books, None).unwrap();
     let (started, finished) = get_reading_dates(&conn, ids[0]);
-    assert!(started.is_some(), "kindle import should set started_at");
+    assert_eq!(started, None, "kindle import should not set started_at");
     assert_eq!(finished, None);
 }
 
@@ -1027,4 +1027,264 @@ fn test_diary_entry_date_validation() {
     assert!(create_diary_entry_db(&conn, book_id, None, None, "not-a-date").is_err());
     assert!(create_diary_entry_db(&conn, book_id, None, None, "04/01/2026").is_err());
     assert!(create_diary_entry_db(&conn, book_id, None, None, "2026-04-01").is_ok());
+}
+
+#[test]
+fn test_import_kindle_persists_all_metadata() {
+    let mut conn = test_conn();
+    let kindle_books = vec![KindleBook {
+        filename: "book.mobi".to_string(),
+        path: "/kindle/book.mobi".to_string(),
+        title: "Rich Metadata Book".to_string(),
+        author: Some("Jane Doe".to_string()),
+        asin: Some("B0ABCDEFGH".to_string()),
+        isbn: Some("9781234567890".to_string()),
+        publisher: Some("Acme Press".to_string()),
+        description: Some("A test book description".to_string()),
+        published_date: Some("2024-01-15".to_string()),
+        language: Some("en".to_string()),
+        cover_data: None,
+        cde_type: Some("EBOK".to_string()),
+        extension: "mobi".to_string(),
+        size_bytes: 5000,
+    }];
+
+    let ids = import_kindle_books_db(&mut conn, &kindle_books, None).unwrap();
+    assert_eq!(ids.len(), 1);
+
+    let book = get_book_db(&conn, ids[0]).unwrap();
+    assert_eq!(book.author, Some("Jane Doe".to_string()));
+    assert_eq!(book.asin, Some("B0ABCDEFGH".to_string()));
+    assert_eq!(book.isbn, Some("9781234567890".to_string()));
+    assert_eq!(book.publisher, Some("Acme Press".to_string()));
+    assert_eq!(
+        book.description,
+        Some("A test book description".to_string())
+    );
+    assert_eq!(book.published_date, Some("2024-01-15".to_string()));
+}
+
+#[test]
+fn test_enrich_backfills_author() {
+    let conn = test_conn();
+    let book_id = add_book_db(
+        &conn,
+        "Orphan Book",
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let meta = crate::metadata::BookMetadata {
+        author: Some("Discovered Author".to_string()),
+        ..Default::default()
+    };
+    enrich_book_db(&conn, book_id, &meta).unwrap();
+
+    let book = get_book_db(&conn, book_id).unwrap();
+    assert_eq!(book.author, Some("Discovered Author".to_string()));
+}
+
+#[test]
+fn test_enrich_does_not_overwrite_existing_author() {
+    let conn = test_conn();
+    let book_id = add_book_db(
+        &conn,
+        "Has Author",
+        Some("Original Author"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let meta = crate::metadata::BookMetadata {
+        author: Some("API Author".to_string()),
+        ..Default::default()
+    };
+    enrich_book_db(&conn, book_id, &meta).unwrap();
+
+    let book = get_book_db(&conn, book_id).unwrap();
+    assert_eq!(book.author, Some("Original Author".to_string()));
+}
+
+#[test]
+fn test_enrich_prefers_api_cover_over_existing() {
+    let conn = test_conn();
+    let book_id = add_book_db(
+        &conn,
+        "Cover Book",
+        None,
+        None,
+        None,
+        Some("http://old-cover.jpg"),
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let meta = crate::metadata::BookMetadata {
+        cover_url: Some("http://new-cover.jpg".to_string()),
+        ..Default::default()
+    };
+    enrich_book_db(&conn, book_id, &meta).unwrap();
+
+    let book = get_book_db(&conn, book_id).unwrap();
+    assert_eq!(book.cover_url, Some("http://new-cover.jpg".to_string()));
+}
+
+#[test]
+fn test_enrich_preserves_existing_author() {
+    let conn = test_conn();
+    let book_id = add_book_db(
+        &conn,
+        "My Book",
+        Some("Keep This Author"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let meta = crate::metadata::BookMetadata {
+        author: Some("Different Author".to_string()),
+        cover_url: Some("http://cover.jpg".to_string()),
+        isbn: Some("1234567890".to_string()),
+        ..Default::default()
+    };
+    enrich_book_db(&conn, book_id, &meta).unwrap();
+
+    let book = get_book_db(&conn, book_id).unwrap();
+    assert_eq!(book.author, Some("Keep This Author".to_string()));
+    assert_eq!(book.cover_url, Some("http://cover.jpg".to_string()));
+    assert_eq!(book.isbn, Some("1234567890".to_string()));
+}
+
+#[test]
+fn test_import_saves_embedded_cover_to_disk() {
+    use base64::Engine;
+    let mut conn = test_conn();
+
+    let cover_bytes = b"fake-jpeg-data";
+    let cover_b64 = base64::engine::general_purpose::STANDARD.encode(cover_bytes);
+
+    let tmp_dir = std::env::temp_dir().join(format!("blurb_test_covers_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+
+    let books = vec![
+        KindleBook {
+            filename: "with_cover.mobi".to_string(),
+            path: "/kindle/with_cover.mobi".to_string(),
+            title: "Book With Cover".to_string(),
+            author: Some("Author".to_string()),
+            asin: None,
+            isbn: None,
+            publisher: None,
+            description: None,
+            published_date: None,
+            language: None,
+            cover_data: Some(cover_b64),
+            cde_type: None,
+            extension: "mobi".to_string(),
+            size_bytes: 1000,
+        },
+        KindleBook {
+            filename: "no_cover.mobi".to_string(),
+            path: "/kindle/no_cover.mobi".to_string(),
+            title: "Book Without Cover".to_string(),
+            author: Some("Author".to_string()),
+            asin: None,
+            isbn: None,
+            publisher: None,
+            description: None,
+            published_date: None,
+            language: None,
+            cover_data: None,
+            cde_type: None,
+            extension: "mobi".to_string(),
+            size_bytes: 2000,
+        },
+    ];
+
+    let ids = import_kindle_books_db(&mut conn, &books, Some(&tmp_dir)).unwrap();
+    assert_eq!(ids.len(), 2);
+
+    // Book with cover_data: file exists, cover_url set
+    let cover_path = tmp_dir.join(format!("{}.jpg", ids[0]));
+    assert!(cover_path.exists(), "cover file should be written to disk");
+    assert_eq!(std::fs::read(&cover_path).unwrap(), b"fake-jpeg-data");
+
+    let book1 = get_book_db(&conn, ids[0]).unwrap();
+    assert_eq!(
+        book1.cover_url,
+        Some(cover_path.to_string_lossy().to_string())
+    );
+
+    // Book without cover_data: no file, cover_url is NULL
+    let no_cover_path = tmp_dir.join(format!("{}.jpg", ids[1]));
+    assert!(
+        !no_cover_path.exists(),
+        "no cover file for book without cover_data"
+    );
+
+    let book2 = get_book_db(&conn, ids[1]).unwrap();
+    assert_eq!(book2.cover_url, None);
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+}
+
+#[test]
+fn test_import_kindle_invalid_cover_base64_is_non_fatal() {
+    let mut conn = test_conn();
+    let tmp_dir = std::env::temp_dir().join("blurb_test_bad_cover");
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+
+    let books = vec![KindleBook {
+        filename: "bad_cover.mobi".to_string(),
+        path: "/kindle/bad_cover.mobi".to_string(),
+        title: "Bad Cover Book".to_string(),
+        author: Some("Author".to_string()),
+        asin: None,
+        isbn: None,
+        publisher: None,
+        description: None,
+        published_date: None,
+        language: None,
+        cover_data: Some("%%%not-valid-base64%%%".to_string()),
+        cde_type: None,
+        extension: "mobi".to_string(),
+        size_bytes: 1000,
+    }];
+
+    let ids = import_kindle_books_db(&mut conn, &books, Some(&tmp_dir)).unwrap();
+    assert_eq!(
+        ids.len(),
+        1,
+        "book should still be imported despite bad cover"
+    );
+
+    let book = get_book_db(&conn, ids[0]).unwrap();
+    assert_eq!(book.title, "Bad Cover Book");
+    assert_eq!(
+        book.cover_url, None,
+        "cover_url should be None when base64 is invalid"
+    );
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
 }
