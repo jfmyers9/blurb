@@ -436,7 +436,6 @@ fn test_create_shelf_whitespace_name_errors() {
     assert!(create_shelf_db(&conn, "   ").is_err());
 }
 
-
 #[test]
 fn test_rename_shelf_to_duplicate_errors() {
     let conn = test_conn();
@@ -1058,7 +1057,10 @@ fn test_import_kindle_persists_all_metadata() {
     assert_eq!(book.asin, Some("B0ABCDEFGH".to_string()));
     assert_eq!(book.isbn, Some("9781234567890".to_string()));
     assert_eq!(book.publisher, Some("Acme Press".to_string()));
-    assert_eq!(book.description, Some("A test book description".to_string()));
+    assert_eq!(
+        book.description,
+        Some("A test book description".to_string())
+    );
     assert_eq!(book.published_date, Some("2024-01-15".to_string()));
 }
 
@@ -1066,7 +1068,16 @@ fn test_import_kindle_persists_all_metadata() {
 fn test_enrich_backfills_author() {
     let conn = test_conn();
     let book_id = add_book_db(
-        &conn, "Orphan Book", None, None, None, None, None, None, None, None,
+        &conn,
+        "Orphan Book",
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
     )
     .unwrap();
 
@@ -1087,7 +1098,13 @@ fn test_enrich_does_not_overwrite_existing_author() {
         &conn,
         "Has Author",
         Some("Original Author"),
-        None, None, None, None, None, None, None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
     )
     .unwrap();
 
@@ -1105,8 +1122,16 @@ fn test_enrich_does_not_overwrite_existing_author() {
 fn test_enrich_prefers_api_cover_over_existing() {
     let conn = test_conn();
     let book_id = add_book_db(
-        &conn, "Cover Book", None, None, None,
-        Some("http://old-cover.jpg"), None, None, None, None,
+        &conn,
+        "Cover Book",
+        None,
+        None,
+        None,
+        Some("http://old-cover.jpg"),
+        None,
+        None,
+        None,
+        None,
     )
     .unwrap();
 
@@ -1127,7 +1152,13 @@ fn test_enrich_preserves_existing_author() {
         &conn,
         "My Book",
         Some("Keep This Author"),
-        None, None, None, None, None, None, None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
     )
     .unwrap();
 
@@ -1207,7 +1238,10 @@ fn test_import_saves_embedded_cover_to_disk() {
 
     // Book without cover_data: no file, cover_url is NULL
     let no_cover_path = tmp_dir.join(format!("{}.jpg", ids[1]));
-    assert!(!no_cover_path.exists(), "no cover file for book without cover_data");
+    assert!(
+        !no_cover_path.exists(),
+        "no cover file for book without cover_data"
+    );
 
     let book2 = get_book_db(&conn, ids[1]).unwrap();
     assert_eq!(book2.cover_url, None);
@@ -1239,11 +1273,18 @@ fn test_import_kindle_invalid_cover_base64_is_non_fatal() {
     }];
 
     let ids = import_kindle_books_db(&mut conn, &books, Some(&tmp_dir)).unwrap();
-    assert_eq!(ids.len(), 1, "book should still be imported despite bad cover");
+    assert_eq!(
+        ids.len(),
+        1,
+        "book should still be imported despite bad cover"
+    );
 
     let book = get_book_db(&conn, ids[0]).unwrap();
     assert_eq!(book.title, "Bad Cover Book");
-    assert_eq!(book.cover_url, None, "cover_url should be None when base64 is invalid");
+    assert_eq!(
+        book.cover_url, None,
+        "cover_url should be None when base64 is invalid"
+    );
 
     let _ = std::fs::remove_dir_all(&tmp_dir);
 }
