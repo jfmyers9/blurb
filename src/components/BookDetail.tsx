@@ -1,5 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { generateHTML } from "@tiptap/html";
+import { sharedExtensions } from "../lib/editorExtensions";
 import type { Book, BookMetadata, Highlight } from "../lib/api";
 import { searchCovers, uploadCover, listHighlights, enrichBook } from "../lib/api";
 import { coverSrc } from "../lib/cover";
@@ -400,24 +402,24 @@ export default function BookDetail({
               </button>
             </div>
             {book.review ? (
-              <p className="line-clamp-3 text-sm text-gray-600 dark:text-gray-400">
-                {(() => {
-                  try {
-                    const doc = JSON.parse(book.review);
-                    if (doc?.type === "doc" && Array.isArray(doc.content)) {
-                      return doc.content
-                        .map((node: { content?: { text?: string }[] }) =>
-                          node.content?.map((c) => c.text ?? "").join("") ?? ""
-                        )
-                        .filter(Boolean)
-                        .join(" ");
-                    }
-                    return book.review;
-                  } catch {
-                    return book.review;
-                  }
-                })()}
-              </p>
+              (() => {
+                try {
+                  const doc = JSON.parse(book.review);
+                  const html = generateHTML(doc, sharedExtensions);
+                  return (
+                    <div
+                      className="prose prose-sm dark:prose-invert line-clamp-4 text-gray-600 dark:text-gray-400"
+                      dangerouslySetInnerHTML={{ __html: html }}
+                    />
+                  );
+                } catch {
+                  return (
+                    <p className="line-clamp-4 text-sm text-gray-600 dark:text-gray-400">
+                      {book.review}
+                    </p>
+                  );
+                }
+              })()
             ) : (
               <p className="text-sm text-gray-400 dark:text-gray-500 italic">
                 No review yet
