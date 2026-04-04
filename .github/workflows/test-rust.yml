@@ -1,25 +1,17 @@
-name: Tests
+name: Rust Tests
 
 on:
   push:
+    paths:
+      - src-tauri/**
+      - .github/workflows/test-rust.yml
   pull_request:
+    paths:
+      - src-tauri/**
+      - .github/workflows/test-rust.yml
   workflow_call:
 
 jobs:
-  frontend-tests:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - run: npm ci
-      - run: npx tsc --noEmit
-      - run: npm test
-
   rust-tests:
     runs-on: ubuntu-latest
     steps:

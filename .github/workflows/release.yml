@@ -35,11 +35,14 @@ jobs:
           echo "::error::Changelog is empty — no conventional commits found since last tag"
           exit 1
 
-  test:
-    uses: ./.github/workflows/test.yml
+  test-frontend:
+    uses: ./.github/workflows/test-frontend.yml
+
+  test-rust:
+    uses: ./.github/workflows/test-rust.yml
 
   release:
-    needs: [changelog, test]
+    needs: [changelog, test-frontend, test-rust]
     timeout-minutes: 30
     strategy:
       fail-fast: false
