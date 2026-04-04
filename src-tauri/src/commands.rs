@@ -259,6 +259,9 @@ pub(crate) fn import_kindle_books_db(
     covers_dir: Option<&Path>,
 ) -> Result<Vec<i64>, String> {
     let tx = conn.transaction().map_err(|e| e.to_string())?;
+    if let Some(dir) = covers_dir {
+        fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
     let mut ids = Vec::new();
     for book in books {
         let exists: bool = tx
@@ -295,20 +298,32 @@ pub(crate) fn import_kindle_books_db(
             [book_id],
         )
         .map_err(|e| e.to_string())?;
-        if let (Some(ref cover_b64), Some(dir)) = (&book.cover_data, covers_dir) {
+        if let (Some(cover_b64), Some(dir)) = (&book.cover_data, covers_dir) {
             use base64::Engine;
-            let bytes = base64::engine::general_purpose::STANDARD
-                .decode(cover_b64)
-                .map_err(|e| e.to_string())?;
-            fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-            let cover_path = dir.join(format!("{}.jpg", book_id));
-            fs::write(&cover_path, &bytes).map_err(|e| e.to_string())?;
-            let cover_url = cover_path.to_string_lossy().to_string();
-            tx.execute(
-                "UPDATE books SET cover_url = ?1 WHERE id = ?2",
-                rusqlite::params![cover_url, book_id],
-            )
-            .map_err(|e| e.to_string())?;
+            match base64::engine::general_purpose::STANDARD.decode(cover_b64) {
+                Ok(bytes) => {
+                    let cover_path = dir.join(format!("{}.jpg", book_id));
+                    match cover_path.to_str() {
+                        Some(cover_url) => {
+                            if let Err(e) = fs::write(&cover_path, &bytes) {
+                                eprintln!("warn: failed to write cover for '{}': {e}", book.title);
+                            } else {
+                                tx.execute(
+                                    "UPDATE books SET cover_url = ?1 WHERE id = ?2",
+                                    rusqlite::params![cover_url, book_id],
+                                )
+                                .map_err(|e| e.to_string())?;
+                            }
+                        }
+                        None => {
+                            eprintln!("warn: non-UTF-8 cover path for '{}'", book.title);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("warn: failed to decode cover for '{}': {e}", book.title);
+                }
+            }
         }
         ids.push(book_id);
     }
@@ -652,7 +667,15 @@ pub async fn enrich_book(state: State<'_, AppState>, book_id: i64) -> Result<(),
     let meta = crate::metadata::search_by_title(&title, author.as_deref()).await?;
 
     let db = state.db.lock().map_err(|e| e.to_string())?;
-    db.execute(
+    enrich_book_db(&db, book_id, &meta)
+}
+
+pub(crate) fn enrich_book_db(
+    conn: &rusqlite::Connection,
+    book_id: i64,
+    meta: &BookMetadata,
+) -> Result<(), String> {
+    conn.execute(
         "UPDATE books SET \
          author = COALESCE(author, ?1), \
          isbn = COALESCE(isbn, ?2), \

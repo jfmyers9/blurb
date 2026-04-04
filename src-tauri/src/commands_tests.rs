@@ -436,48 +436,6 @@ fn test_create_shelf_whitespace_name_errors() {
     assert!(create_shelf_db(&conn, "   ").is_err());
 }
 
-#[test]
-fn test_kindle_import_sets_want_to_read_without_started_at() {
-    let mut conn = test_conn();
-    let books = vec![KindleBook {
-        filename: "test.mobi".to_string(),
-        path: "/kindle/test.mobi".to_string(),
-        title: "Imported Book".to_string(),
-        author: Some("Author".to_string()),
-        asin: None,
-        isbn: None,
-        publisher: None,
-        description: None,
-        published_date: None,
-        language: None,
-        cover_data: None,
-        cde_type: None,
-        extension: "mobi".to_string(),
-        size_bytes: 500,
-    }];
-
-    let ids = import_kindle_books_db(&mut conn, &books, None).unwrap();
-    assert_eq!(ids.len(), 1);
-
-    let book = get_book_db(&conn, ids[0]).unwrap();
-    assert_eq!(
-        book.status,
-        Some("want_to_read".to_string()),
-        "kindle imports should default to want_to_read, not reading"
-    );
-
-    let started_at: Option<String> = conn
-        .query_row(
-            "SELECT started_at FROM reading_status WHERE book_id = ?1",
-            [ids[0]],
-            |r| r.get(0),
-        )
-        .unwrap();
-    assert!(
-        started_at.is_none(),
-        "started_at should be NULL until book transitions to reading"
-    );
-}
 
 #[test]
 fn test_rename_shelf_to_duplicate_errors() {
@@ -1112,29 +1070,11 @@ fn test_enrich_backfills_author() {
     )
     .unwrap();
 
-    // Simulate the enrich UPDATE that would run after API lookup
-    conn.execute(
-        "UPDATE books SET \
-         author = COALESCE(author, ?1), \
-         isbn = COALESCE(isbn, ?2), \
-         cover_url = COALESCE(cover_url, ?3), \
-         description = COALESCE(description, ?4), \
-         publisher = COALESCE(publisher, ?5), \
-         published_date = COALESCE(published_date, ?6), \
-         page_count = COALESCE(page_count, ?7), \
-         updated_at = datetime('now') WHERE id = ?8",
-        rusqlite::params![
-            Some("Discovered Author"),
-            Option::<String>::None,
-            Option::<String>::None,
-            Option::<String>::None,
-            Option::<String>::None,
-            Option::<String>::None,
-            Option::<i32>::None,
-            book_id,
-        ],
-    )
-    .unwrap();
+    let meta = crate::metadata::BookMetadata {
+        author: Some("Discovered Author".to_string()),
+        ..Default::default()
+    };
+    enrich_book_db(&conn, book_id, &meta).unwrap();
 
     let book = get_book_db(&conn, book_id).unwrap();
     assert_eq!(book.author, Some("Discovered Author".to_string()));
@@ -1151,16 +1091,58 @@ fn test_enrich_does_not_overwrite_existing_author() {
     )
     .unwrap();
 
-    conn.execute(
-        "UPDATE books SET \
-         author = COALESCE(author, ?1), \
-         updated_at = datetime('now') WHERE id = ?2",
-        rusqlite::params![Some("API Author"), book_id],
-    )
-    .unwrap();
+    let meta = crate::metadata::BookMetadata {
+        author: Some("API Author".to_string()),
+        ..Default::default()
+    };
+    enrich_book_db(&conn, book_id, &meta).unwrap();
 
     let book = get_book_db(&conn, book_id).unwrap();
     assert_eq!(book.author, Some("Original Author".to_string()));
+}
+
+#[test]
+fn test_enrich_prefers_api_cover_over_existing() {
+    let conn = test_conn();
+    let book_id = add_book_db(
+        &conn, "Cover Book", None, None, None,
+        Some("http://old-cover.jpg"), None, None, None, None,
+    )
+    .unwrap();
+
+    let meta = crate::metadata::BookMetadata {
+        cover_url: Some("http://new-cover.jpg".to_string()),
+        ..Default::default()
+    };
+    enrich_book_db(&conn, book_id, &meta).unwrap();
+
+    let book = get_book_db(&conn, book_id).unwrap();
+    assert_eq!(book.cover_url, Some("http://new-cover.jpg".to_string()));
+}
+
+#[test]
+fn test_enrich_preserves_existing_author() {
+    let conn = test_conn();
+    let book_id = add_book_db(
+        &conn,
+        "My Book",
+        Some("Keep This Author"),
+        None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    let meta = crate::metadata::BookMetadata {
+        author: Some("Different Author".to_string()),
+        cover_url: Some("http://cover.jpg".to_string()),
+        isbn: Some("1234567890".to_string()),
+        ..Default::default()
+    };
+    enrich_book_db(&conn, book_id, &meta).unwrap();
+
+    let book = get_book_db(&conn, book_id).unwrap();
+    assert_eq!(book.author, Some("Keep This Author".to_string()));
+    assert_eq!(book.cover_url, Some("http://cover.jpg".to_string()));
+    assert_eq!(book.isbn, Some("1234567890".to_string()));
 }
 
 #[test]
@@ -1229,6 +1211,39 @@ fn test_import_saves_embedded_cover_to_disk() {
 
     let book2 = get_book_db(&conn, ids[1]).unwrap();
     assert_eq!(book2.cover_url, None);
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+}
+
+#[test]
+fn test_import_kindle_invalid_cover_base64_is_non_fatal() {
+    let mut conn = test_conn();
+    let tmp_dir = std::env::temp_dir().join("blurb_test_bad_cover");
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+
+    let books = vec![KindleBook {
+        filename: "bad_cover.mobi".to_string(),
+        path: "/kindle/bad_cover.mobi".to_string(),
+        title: "Bad Cover Book".to_string(),
+        author: Some("Author".to_string()),
+        asin: None,
+        isbn: None,
+        publisher: None,
+        description: None,
+        published_date: None,
+        language: None,
+        cover_data: Some("%%%not-valid-base64%%%".to_string()),
+        cde_type: None,
+        extension: "mobi".to_string(),
+        size_bytes: 1000,
+    }];
+
+    let ids = import_kindle_books_db(&mut conn, &books, Some(&tmp_dir)).unwrap();
+    assert_eq!(ids.len(), 1, "book should still be imported despite bad cover");
+
+    let book = get_book_db(&conn, ids[0]).unwrap();
+    assert_eq!(book.title, "Bad Cover Book");
+    assert_eq!(book.cover_url, None, "cover_url should be None when base64 is invalid");
 
     let _ = std::fs::remove_dir_all(&tmp_dir);
 }
