@@ -2,13 +2,6 @@ use super::*;
 use rusqlite::Connection;
 
 #[test]
-fn run_migrations_on_fresh_db() {
-    let conn = Connection::open_in_memory().unwrap();
-    run_migrations(&conn).unwrap();
-    assert_eq!(get_user_version(&conn).unwrap(), 2);
-}
-
-#[test]
 fn migration_1_creates_all_tables() {
     let conn = Connection::open_in_memory().unwrap();
     run_migrations(&conn).unwrap();
@@ -66,76 +59,7 @@ fn incremental_upgrade_from_version_1_to_2() {
     conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
 
     // Apply only migration 1
-    let v1_only = vec![Migration {
-        version: 1,
-        description: "initial schema",
-        up: |conn| {
-            conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS books(
-                    id INTEGER PRIMARY KEY,
-                    title TEXT NOT NULL,
-                    author TEXT,
-                    isbn TEXT,
-                    asin TEXT,
-                    cover_url TEXT,
-                    description TEXT,
-                    publisher TEXT,
-                    published_date TEXT,
-                    page_count INTEGER,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS reading_status(
-                    id INTEGER PRIMARY KEY,
-                    book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
-                    status TEXT NOT NULL CHECK(status IN ('want_to_read','reading','finished','abandoned')),
-                    started_at TEXT,
-                    finished_at TEXT,
-                    updated_at TEXT NOT NULL,
-                    UNIQUE(book_id)
-                );
-                CREATE TABLE IF NOT EXISTS ratings(
-                    id INTEGER PRIMARY KEY,
-                    book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
-                    score INTEGER NOT NULL CHECK(score BETWEEN 1 AND 5),
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    UNIQUE(book_id)
-                );
-                CREATE TABLE IF NOT EXISTS reviews(
-                    id INTEGER PRIMARY KEY,
-                    book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
-                    body TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    UNIQUE(book_id)
-                );
-                CREATE TABLE IF NOT EXISTS shelves(
-                    id INTEGER PRIMARY KEY,
-                    name TEXT NOT NULL UNIQUE,
-                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-                );
-                CREATE TABLE IF NOT EXISTS book_shelves(
-                    book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
-                    shelf_id INTEGER NOT NULL REFERENCES shelves(id) ON DELETE CASCADE,
-                    UNIQUE(book_id, shelf_id)
-                );
-                CREATE TABLE IF NOT EXISTS highlights(
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
-                    text TEXT NOT NULL,
-                    location_start INTEGER,
-                    location_end INTEGER,
-                    page INTEGER,
-                    clip_type TEXT NOT NULL CHECK(clip_type IN ('highlight','note','bookmark')),
-                    clipped_at TEXT,
-                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                    UNIQUE(book_id, text, location_start)
-                );",
-            )
-        },
-    }];
-    run_migration_list(&conn, &v1_only).unwrap();
+    run_migration_list(&conn, &migrations()[..1]).unwrap();
     assert_eq!(get_user_version(&conn).unwrap(), 1);
 
     // Insert data at version 1
@@ -176,7 +100,7 @@ fn failed_migration_includes_version_and_sql_error() {
     }];
 
     let err = run_migration_list(&conn, &migrations).unwrap_err();
-    assert!(err.contains("1"), "error should contain version number: {err}");
+    assert!(err.contains("migration 1"), "error should contain version number: {err}");
     assert!(
         err.contains("broken schema"),
         "error should contain description: {err}"
@@ -204,7 +128,7 @@ fn failed_migration_does_not_advance_user_version() {
     ];
 
     let err = run_migration_list(&conn, &migrations).unwrap_err();
-    assert!(err.contains("2"), "error should reference version 2: {err}");
+    assert!(err.contains("migration 2"), "error should reference version 2: {err}");
     assert_eq!(
         get_user_version(&conn).unwrap(),
         1,
@@ -212,4 +136,45 @@ fn failed_migration_does_not_advance_user_version() {
     );
     conn.execute("INSERT INTO test_tbl (id) VALUES (1)", [])
         .expect("test_tbl should exist from successful first migration");
+}
+
+#[test]
+fn pragma_user_version_rolls_back_with_transaction() {
+    let conn = Connection::open_in_memory().unwrap();
+    set_user_version(&conn, 1).unwrap();
+    let tx = conn.unchecked_transaction().unwrap();
+    set_user_version(&tx, 42).unwrap();
+    tx.rollback().unwrap();
+    assert_eq!(get_user_version(&conn).unwrap(), 1);
+}
+
+#[test]
+fn run_migrations_is_idempotent() {
+    let conn = Connection::open_in_memory().unwrap();
+    run_migrations(&conn).unwrap();
+    run_migrations(&conn).unwrap();
+    assert_eq!(get_user_version(&conn).unwrap(), 2);
+}
+
+#[test]
+fn migration_versions_are_strictly_ascending() {
+    let ms = migrations();
+    for w in ms.windows(2) {
+        assert!(
+            w[0].version < w[1].version,
+            "migration {} must come before {}",
+            w[0].version,
+            w[1].version
+        );
+    }
+}
+
+#[test]
+fn run_migrations_enables_foreign_keys() {
+    let conn = Connection::open_in_memory().unwrap();
+    run_migrations(&conn).unwrap();
+    let fk: i32 = conn
+        .query_row("PRAGMA foreign_keys", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(fk, 1);
 }

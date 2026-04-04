@@ -108,6 +108,7 @@ fn set_user_version(conn: &Connection, version: i32) -> Result<(), rusqlite::Err
 
 pub fn run_migration_list(conn: &Connection, migrations: &[Migration]) -> Result<(), String> {
     let current_version = get_user_version(conn).map_err(|e| e.to_string())?;
+    debug_assert!(migrations.windows(2).all(|w| w[0].version < w[1].version));
 
     for migration in migrations {
         if migration.version > current_version {
