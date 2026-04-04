@@ -7,10 +7,10 @@ describe("coverSrc", () => {
   });
 
   it("converts absolute Unix paths via convertFileSrc", () => {
-    expect(coverSrc("/path/to/cover.jpg")).toMatch(/^asset:\/\//);
+    expect(coverSrc("/path/to/cover.jpg")).toBe("asset://mock//path/to/cover.jpg");
   });
 
   it("converts Windows paths via convertFileSrc", () => {
-    expect(coverSrc("C:\\path\\cover.jpg")).toMatch(/^asset:\/\//);
+    expect(coverSrc("C:\\path\\cover.jpg")).toBe("asset://mock/C:\\path\\cover.jpg");
   });
 });

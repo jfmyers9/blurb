@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parsePlainTextToDoc, parseReviewContent } from "./ReviewPage";
+import { parsePlainTextToDoc, parseReviewContent } from "./reviewParser";
 
 describe("parseReviewContent", () => {
   it("returns undefined for null", () => {
