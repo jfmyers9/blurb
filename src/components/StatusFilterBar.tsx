@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import type { Book, Shelf } from "../lib/api";
 import { getStatusInfo } from "./StatusSelect";
 import SortDropdown from "./ui/SortDropdown";
@@ -163,6 +163,22 @@ function ShelfPill({
   );
 }
 
+function FilterTag({ label, testId, onDismiss }: { label: React.ReactNode; testId: string; onDismiss: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+      {label}
+      <button
+        type="button"
+        data-testid={testId}
+        onClick={onDismiss}
+        className="ml-0.5 text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200"
+      >
+        ×
+      </button>
+    </span>
+  );
+}
+
 export default function StatusFilterBar({
   books,
   activeStatus,
@@ -192,22 +208,26 @@ export default function StatusFilterBar({
     if (!sentinel) return;
     const observer = new IntersectionObserver(
       ([entry]) => setIsStuck(!entry.isIntersecting),
-      { threshold: 0, rootMargin: "-49px 0px 0px 0px" }
+      { threshold: 0, rootMargin: "-49px 0px 0px 0px" } // Must match header height in App.tsx
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, []);
 
-  const counts = new Map<string, number>();
-  counts.set("all", books.length);
-  for (const book of books) {
-    const s = book.status ?? "";
-    if (s) counts.set(s, (counts.get(s) ?? 0) + 1);
-  }
+  const counts = useMemo(() => {
+    const m = new Map<string, number>();
+    m.set("all", books.length);
+    for (const book of books) {
+      const s = book.status ?? "";
+      if (s) m.set(s, (m.get(s) ?? 0) + 1);
+    }
+    return m;
+  }, [books]);
 
   return (
     <>
     <div ref={sentinelRef} className="h-0" />
+    {/* top-[49px] must match header height in App.tsx */}
     <div className={`sticky top-[49px] z-20 space-y-2 px-6 pt-5 pb-1 bg-white/80 backdrop-blur dark:bg-gray-900/80 transition-shadow duration-150 ${
       isStuck ? "shadow-sm border-b border-gray-200 dark:border-gray-700" : ""
     }`}>
@@ -385,56 +405,16 @@ export default function StatusFilterBar({
         >
           <span className="text-[10px] font-medium uppercase tracking-wider text-gray-400">Filters</span>
           {activeStatus !== "all" && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
-              {FILTER_STATUSES.find((s) => s.value === activeStatus)?.label}
-              <button
-                type="button"
-                data-testid="dismiss-status"
-                onClick={() => onStatusChange("all")}
-                className="ml-0.5 text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200"
-              >
-                ×
-              </button>
-            </span>
+            <FilterTag label={FILTER_STATUSES.find((s) => s.value === activeStatus)?.label} testId="dismiss-status" onDismiss={() => onStatusChange("all")} />
           )}
           {minRating !== null && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
-              {minRating}+ ★
-              <button
-                type="button"
-                data-testid="dismiss-rating"
-                onClick={() => onMinRatingChange(null)}
-                className="ml-0.5 text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200"
-              >
-                ×
-              </button>
-            </span>
+            <FilterTag label={<>{minRating}+ ★</>} testId="dismiss-rating" onDismiss={() => onMinRatingChange(null)} />
           )}
           {activeShelf !== null && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
-              {shelves.find((s) => s.id === activeShelf)?.name}
-              <button
-                type="button"
-                data-testid="dismiss-shelf"
-                onClick={() => onShelfChange(null)}
-                className="ml-0.5 text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200"
-              >
-                ×
-              </button>
-            </span>
+            <FilterTag label={shelves.find((s) => s.id === activeShelf)?.name} testId="dismiss-shelf" onDismiss={() => onShelfChange(null)} />
           )}
           {searchQuery !== "" && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
-              search: {searchQuery}
-              <button
-                type="button"
-                data-testid="dismiss-search"
-                onClick={() => onSearchChange("")}
-                className="ml-0.5 text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200"
-              >
-                ×
-              </button>
-            </span>
+            <FilterTag label={<>search: {searchQuery}</>} testId="dismiss-search" onDismiss={() => onSearchChange("")} />
           )}
           <button
             type="button"

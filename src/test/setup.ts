@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 
-// Mock IntersectionObserver for sticky behavior tests
+// Prevents jsdom runtime errors — sticky shadow behavior tested manually
 class MockIntersectionObserver {
   callback: IntersectionObserverCallback;
   constructor(callback: IntersectionObserverCallback) {

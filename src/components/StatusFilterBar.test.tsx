@@ -327,5 +327,106 @@ describe("StatusFilterBar", () => {
       fireEvent.click(screen.getByText("Clear all"));
       expect(props.onClearAll).toHaveBeenCalled();
     });
+
+    it("shows multiple filter tags simultaneously", () => {
+      const props = defaultProps();
+      props.books = [makeBook({ id: 1, rating: 5 })];
+      render(<StatusFilterBar {...props} activeStatus="reading" minRating={4} searchQuery="foo" />);
+      const summary = screen.getByTestId("filter-summary");
+      expect(summary).toHaveTextContent("Reading");
+      expect(summary).toHaveTextContent("4+ ★");
+      expect(summary).toHaveTextContent("search: foo");
+    });
+  });
+
+  describe("SortDropdown keyboard navigation", () => {
+    it("ArrowDown cycles through options and wraps at end", () => {
+      render(<StatusFilterBar {...defaultProps()} />);
+      const trigger = screen.getByLabelText("Sort by");
+      fireEvent.click(trigger);
+
+      // Default sort is date_added (index 0). Arrow down moves to index 1.
+      fireEvent.keyDown(trigger, { key: "ArrowDown" });
+      expect(trigger.getAttribute("aria-activedescendant")).toBe("sort-option-1");
+
+      fireEvent.keyDown(trigger, { key: "ArrowDown" });
+      expect(trigger.getAttribute("aria-activedescendant")).toBe("sort-option-2");
+
+      fireEvent.keyDown(trigger, { key: "ArrowDown" });
+      expect(trigger.getAttribute("aria-activedescendant")).toBe("sort-option-3");
+
+      // Wrap around to 0
+      fireEvent.keyDown(trigger, { key: "ArrowDown" });
+      expect(trigger.getAttribute("aria-activedescendant")).toBe("sort-option-0");
+    });
+
+    it("ArrowUp cycles through options and wraps at start", () => {
+      render(<StatusFilterBar {...defaultProps()} />);
+      const trigger = screen.getByLabelText("Sort by");
+      fireEvent.click(trigger);
+
+      // Currently at index 0 (date_added). ArrowUp wraps to last (index 3).
+      fireEvent.keyDown(trigger, { key: "ArrowUp" });
+      expect(trigger.getAttribute("aria-activedescendant")).toBe("sort-option-3");
+
+      fireEvent.keyDown(trigger, { key: "ArrowUp" });
+      expect(trigger.getAttribute("aria-activedescendant")).toBe("sort-option-2");
+    });
+
+    it("Enter selects focused option and closes dropdown", () => {
+      const props = defaultProps();
+      render(<StatusFilterBar {...props} />);
+      const trigger = screen.getByLabelText("Sort by");
+      fireEvent.click(trigger);
+
+      // Move to "Title" (index 1)
+      fireEvent.keyDown(trigger, { key: "ArrowDown" });
+      fireEvent.keyDown(trigger, { key: "Enter" });
+
+      expect(props.onSortChange).toHaveBeenCalledWith("title");
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    });
+
+    it("Escape closes dropdown without selecting", () => {
+      const props = defaultProps();
+      render(<StatusFilterBar {...props} />);
+      const trigger = screen.getByLabelText("Sort by");
+      fireEvent.click(trigger);
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+
+      fireEvent.keyDown(trigger, { key: "ArrowDown" });
+      fireEvent.keyDown(trigger, { key: "Escape" });
+
+      expect(props.onSortChange).not.toHaveBeenCalled();
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    });
+
+    it("Space opens dropdown when closed", () => {
+      render(<StatusFilterBar {...defaultProps()} />);
+      const trigger = screen.getByLabelText("Sort by");
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+
+      fireEvent.keyDown(trigger, { key: " " });
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+    });
+
+    it("Enter opens dropdown when closed", () => {
+      render(<StatusFilterBar {...defaultProps()} />);
+      const trigger = screen.getByLabelText("Sort by");
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+
+      fireEvent.keyDown(trigger, { key: "Enter" });
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+    });
+
+    it("outside click closes dropdown", () => {
+      render(<StatusFilterBar {...defaultProps()} />);
+      const trigger = screen.getByLabelText("Sort by");
+      fireEvent.click(trigger);
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+
+      fireEvent.mouseDown(document.body);
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    });
   });
 });

@@ -22,7 +22,8 @@ export default function SortDropdown<T extends string>({
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target;
+      if (target instanceof Node && containerRef.current && !containerRef.current.contains(target)) {
         setOpen(false);
       }
     };
@@ -69,6 +70,8 @@ export default function SortDropdown<T extends string>({
         return;
       }
 
+      if (options.length === 0) return;
+
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault();
@@ -83,6 +86,17 @@ export default function SortDropdown<T extends string>({
           if (focusIndex >= 0 && focusIndex < options.length) {
             select(options[focusIndex].value);
           }
+          break;
+        case "Home":
+          e.preventDefault();
+          setFocusIndex(0);
+          break;
+        case "End":
+          e.preventDefault();
+          setFocusIndex(options.length - 1);
+          break;
+        case "Tab":
+          setOpen(false);
           break;
         case "Escape":
           e.preventDefault();
@@ -100,6 +114,7 @@ export default function SortDropdown<T extends string>({
         aria-label="Sort by"
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-activedescendant={open && focusIndex >= 0 ? `sort-option-${focusIndex}` : undefined}
         onClick={toggle}
         onKeyDown={handleKeyDown}
         className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white
@@ -133,6 +148,7 @@ export default function SortDropdown<T extends string>({
             return (
               <li
                 key={opt.value}
+                id={`sort-option-${i}`}
                 role="option"
                 aria-selected={isSelected}
                 onMouseEnter={() => setFocusIndex(i)}
