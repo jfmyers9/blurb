@@ -20,7 +20,7 @@ fn main() {
         conn: Arc::new(Mutex::new(conn)),
     };
 
-    let icon_rgba = image::load_from_memory(include_bytes!("../icon.png"))
+    let icon_rgba = image::load_from_memory(include_bytes!("../assets/icon.png"))
         .expect("failed to decode icon.png")
         .into_rgba8();
     let (width, height) = icon_rgba.dimensions();
