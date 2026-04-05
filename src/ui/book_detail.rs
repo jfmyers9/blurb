@@ -8,6 +8,7 @@ use crate::data::commands::{
 };
 use crate::data::models::{Book, DiaryEntry, Highlight, Shelf};
 use crate::services::metadata;
+use crate::services::purchase_links;
 use crate::DatabaseHandle;
 
 use super::diary_entry_form::DiaryEntryForm;
@@ -798,6 +799,55 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                                 });
                             }
                         },
+                    }
+                }
+
+                // Where to get this
+                {
+                    let links = book.read().as_ref().map(purchase_links::generate_links).unwrap_or_default();
+                    rsx! {
+                        if !links.is_empty() {
+                            div {
+                                label {
+                                    class: "mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400",
+                                    "Where to get this"
+                                }
+                                div {
+                                    class: "flex flex-wrap gap-1.5",
+                                    for link in links {
+                                        button {
+                                            r#type: "button",
+                                            onclick: {
+                                                let url = link.url.clone();
+                                                move |_| {
+                                                    let url = url.clone();
+                                                    let _ = open::that(&url);
+                                                }
+                                            },
+                                            class: "inline-flex items-center gap-1 rounded-full border border-gray-200
+                                                bg-gray-50 px-2.5 py-0.5 text-xs text-gray-600 transition
+                                                hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700
+                                                dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300
+                                                dark:hover:border-amber-500 dark:hover:bg-gray-600
+                                                dark:hover:text-amber-400",
+                                            title: "{link.url}",
+                                            span { "{link.name}" }
+                                            svg {
+                                                class: "h-3 w-3 opacity-50",
+                                                view_box: "0 0 20 20",
+                                                fill: "currentColor",
+                                                path {
+                                                    d: "M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z"
+                                                }
+                                                path {
+                                                    d: "M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.194a.75.75 0 00-.053 1.06z"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
