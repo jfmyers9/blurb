@@ -75,8 +75,7 @@ pub fn App() -> Element {
     };
 
     rsx! {
-        // Tailwind CDN for development
-        script { src: "https://cdn.tailwindcss.com" }
+        link { rel: "stylesheet", href: asset!("/assets/tailwind.css") }
 
         div {
             class: "flex min-h-screen flex-col bg-gray-50 dark:bg-gray-950",
