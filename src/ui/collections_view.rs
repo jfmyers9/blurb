@@ -107,7 +107,7 @@ fn BookPicker(
     }
 
     let query = search.read().to_lowercase();
-    let available: Vec<&Book> = all_books
+    let available: Vec<Book> = all_books
         .read()
         .iter()
         .filter(|b| !existing_book_ids.contains(&b.id))
@@ -123,6 +123,7 @@ fn BookPicker(
                     .contains(&query)
         })
         .take(10)
+        .cloned()
         .collect();
 
     rsx! {
@@ -145,12 +146,13 @@ fn BookPicker(
                     "No books available to add"
                 }
             }
-            for book in available {
+            for book in available.iter() {
                 {
                     let bid = book.id;
                     let cid = collection_id;
                     let title = book.title.clone();
                     let author = book.author.clone().unwrap_or_default();
+                    let db = db.clone();
                     rsx! {
                         button {
                             r#type: "button",
@@ -209,21 +211,16 @@ fn CollectionCard(
     let mut show_picker = use_signal(|| false);
     let cid = collection.id;
 
-    let load_books = move || {
-        let db = db.clone();
-        spawn(async move {
-            let conn = db.conn.lock().unwrap();
-            if let Ok(b) = get_collection_books_db(&conn, cid) {
-                books.set(b);
-            }
-        });
-    };
-
     let count_label = if collection.book_count == 1 {
         "1 book".to_string()
     } else {
         format!("{} books", collection.book_count)
     };
+
+    let db_expand = db.clone();
+    let db_delete = db.clone();
+    let db_picker = db.clone();
+    let db_books = db.clone();
 
     rsx! {
         div {
@@ -235,7 +232,13 @@ fn CollectionCard(
                     let is_expanding = !*expanded.read();
                     expanded.set(is_expanding);
                     if is_expanding {
-                        load_books();
+                        let db = db_expand.clone();
+                        spawn(async move {
+                            let conn = db.conn.lock().unwrap();
+                            if let Ok(b) = get_collection_books_db(&conn, cid) {
+                                books.set(b);
+                            }
+                        });
                     }
                 },
                 div {
@@ -262,7 +265,7 @@ fn CollectionCard(
                         title: "Delete collection",
                         onclick: move |e| {
                             e.stop_propagation();
-                            let db = db.clone();
+                            let db = db_delete.clone();
                             spawn(async move {
                                 let conn = db.conn.lock().unwrap();
                                 let _ = delete_collection_db(&conn, cid);
@@ -313,149 +316,158 @@ fn CollectionCard(
                             "No books in this collection yet."
                         }
                     }
-                    for (idx, book) in books.read().iter().enumerate() {
-                        {
-                            let bid = book.id;
-                            let title = book.title.clone();
-                            let author = book.author.clone().unwrap_or_default();
-                            let cover = book.cover_url.clone();
-                            let book_count = books.read().len();
-                            let can_move_up = idx > 0;
-                            let can_move_down = idx < book_count - 1;
-                            rsx! {
-                                div {
-                                    key: "{bid}",
-                                    class: "group flex items-center gap-3 rounded-lg px-2 py-2
-                                        transition hover:bg-gray-50 dark:hover:bg-gray-700/50",
-                                    span {
-                                        class: "w-6 shrink-0 text-center text-xs font-medium
-                                            text-gray-400 dark:text-gray-500",
-                                        "{idx + 1}"
-                                    }
-                                    if let Some(ref url) = cover {
-                                        img {
-                                            src: "{url}",
-                                            class: "h-10 w-7 shrink-0 rounded object-cover shadow-sm",
-                                        }
-                                    } else {
+                    {
+                        let books_snapshot: Vec<(usize, i64, String, String, Option<String>)> = {
+                            let br = books.read();
+                            br.iter().enumerate().map(|(idx, b)| {
+                                (idx, b.id, b.title.clone(), b.author.clone().unwrap_or_default(), b.cover_url.clone())
+                            }).collect()
+                        };
+                        let book_count = books_snapshot.len();
+                        rsx! {
+                            for (idx, bid, title, author, cover) in books_snapshot {
+                                {
+                                    let can_move_up = idx > 0;
+                                    let can_move_down = idx + 1 < book_count;
+                                    let db_up = db_books.clone();
+                                    let db_down = db_books.clone();
+                                    let db_rm = db_books.clone();
+                                    rsx! {
                                         div {
-                                            class: "flex h-10 w-7 shrink-0 items-center justify-center
-                                                rounded bg-gray-200 dark:bg-gray-600",
+                                            key: "{bid}",
+                                            class: "group flex items-center gap-3 rounded-lg px-2 py-2
+                                                transition hover:bg-gray-50 dark:hover:bg-gray-700/50",
                                             span {
-                                                class: "text-xs text-gray-400",
-                                                "?"
+                                                class: "w-6 shrink-0 text-center text-xs font-medium
+                                                    text-gray-400 dark:text-gray-500",
+                                                "{idx + 1}"
                                             }
-                                        }
-                                    }
-                                    button {
-                                        r#type: "button",
-                                        onclick: move |_| on_select_book.call(bid),
-                                        class: "flex-1 text-left",
-                                        span {
-                                            class: "text-sm font-medium text-gray-800 dark:text-gray-200",
-                                            "{title}"
-                                        }
-                                        if !author.is_empty() {
-                                            span {
-                                                class: "ml-2 text-xs text-gray-400 dark:text-gray-500",
-                                                "by {author}"
-                                            }
-                                        }
-                                    }
-                                    div {
-                                        class: "flex items-center gap-1 opacity-0 transition
-                                            group-hover:opacity-100",
-                                        if can_move_up {
-                                            button {
-                                                r#type: "button",
-                                                title: "Move up",
-                                                onclick: move |_| {
-                                                    let mut ids: Vec<i64> = books.read().iter().map(|b| b.id).collect();
-                                                    ids.swap(idx, idx - 1);
-                                                    let db = db.clone();
-                                                    spawn(async move {
-                                                        let conn = db.conn.lock().unwrap();
-                                                        let _ = reorder_collection_db(&conn, cid, &ids);
-                                                        if let Ok(b) = get_collection_books_db(&conn, cid) {
-                                                            books.set(b);
-                                                        }
-                                                    });
-                                                },
-                                                class: "rounded p-0.5 text-gray-400
-                                                    hover:text-amber-600 dark:hover:text-amber-400",
-                                                svg {
-                                                    class: "h-4 w-4",
-                                                    fill: "none",
-                                                    stroke: "currentColor",
-                                                    view_box: "0 0 24 24",
-                                                    path {
-                                                        stroke_linecap: "round",
-                                                        stroke_linejoin: "round",
-                                                        stroke_width: "2",
-                                                        d: "M5 15l7-7 7 7",
+                                            if let Some(ref url) = cover {
+                                                img {
+                                                    src: "{url}",
+                                                    class: "h-10 w-7 shrink-0 rounded object-cover shadow-sm",
+                                                }
+                                            } else {
+                                                div {
+                                                    class: "flex h-10 w-7 shrink-0 items-center justify-center
+                                                        rounded bg-gray-200 dark:bg-gray-600",
+                                                    span {
+                                                        class: "text-xs text-gray-400",
+                                                        "?"
                                                     }
                                                 }
                                             }
-                                        }
-                                        if can_move_down {
                                             button {
                                                 r#type: "button",
-                                                title: "Move down",
-                                                onclick: move |_| {
-                                                    let mut ids: Vec<i64> = books.read().iter().map(|b| b.id).collect();
-                                                    ids.swap(idx, idx + 1);
-                                                    let db = db.clone();
-                                                    spawn(async move {
-                                                        let conn = db.conn.lock().unwrap();
-                                                        let _ = reorder_collection_db(&conn, cid, &ids);
-                                                        if let Ok(b) = get_collection_books_db(&conn, cid) {
-                                                            books.set(b);
-                                                        }
-                                                    });
-                                                },
-                                                class: "rounded p-0.5 text-gray-400
-                                                    hover:text-amber-600 dark:hover:text-amber-400",
-                                                svg {
-                                                    class: "h-4 w-4",
-                                                    fill: "none",
-                                                    stroke: "currentColor",
-                                                    view_box: "0 0 24 24",
-                                                    path {
-                                                        stroke_linecap: "round",
-                                                        stroke_linejoin: "round",
-                                                        stroke_width: "2",
-                                                        d: "M19 9l-7 7-7-7",
+                                                onclick: move |_| on_select_book.call(bid),
+                                                class: "flex-1 text-left",
+                                                span {
+                                                    class: "text-sm font-medium text-gray-800 dark:text-gray-200",
+                                                    "{title}"
+                                                }
+                                                if !author.is_empty() {
+                                                    span {
+                                                        class: "ml-2 text-xs text-gray-400 dark:text-gray-500",
+                                                        "by {author}"
                                                     }
                                                 }
                                             }
-                                        }
-                                        button {
-                                            r#type: "button",
-                                            title: "Remove from collection",
-                                            onclick: move |_| {
-                                                let db = db.clone();
-                                                spawn(async move {
-                                                    let conn = db.conn.lock().unwrap();
-                                                    let _ = remove_book_from_collection_db(&conn, cid, bid);
-                                                    if let Ok(b) = get_collection_books_db(&conn, cid) {
-                                                        books.set(b);
+                                            div {
+                                                class: "flex items-center gap-1 opacity-0 transition
+                                                    group-hover:opacity-100",
+                                                if can_move_up {
+                                                    button {
+                                                        r#type: "button",
+                                                        title: "Move up",
+                                                        onclick: move |_| {
+                                                            let mut ids: Vec<i64> = books.read().iter().map(|b| b.id).collect();
+                                                            ids.swap(idx, idx - 1);
+                                                            let db = db_up.clone();
+                                                            spawn(async move {
+                                                                let conn = db.conn.lock().unwrap();
+                                                                let _ = reorder_collection_db(&conn, cid, &ids);
+                                                                if let Ok(b) = get_collection_books_db(&conn, cid) {
+                                                                    books.set(b);
+                                                                }
+                                                            });
+                                                        },
+                                                        class: "rounded p-0.5 text-gray-400
+                                                            hover:text-amber-600 dark:hover:text-amber-400",
+                                                        svg {
+                                                            class: "h-4 w-4",
+                                                            fill: "none",
+                                                            stroke: "currentColor",
+                                                            view_box: "0 0 24 24",
+                                                            path {
+                                                                stroke_linecap: "round",
+                                                                stroke_linejoin: "round",
+                                                                stroke_width: "2",
+                                                                d: "M5 15l7-7 7 7",
+                                                            }
+                                                        }
                                                     }
-                                                    drop(conn);
-                                                    on_changed.call(());
-                                                });
-                                            },
-                                            class: "rounded p-0.5 text-gray-400
-                                                hover:text-red-500 dark:hover:text-red-400",
-                                            svg {
-                                                class: "h-4 w-4",
-                                                fill: "none",
-                                                stroke: "currentColor",
-                                                view_box: "0 0 24 24",
-                                                path {
-                                                    stroke_linecap: "round",
-                                                    stroke_linejoin: "round",
-                                                    stroke_width: "2",
-                                                    d: "M6 18L18 6M6 6l12 12",
+                                                }
+                                                if can_move_down {
+                                                    button {
+                                                        r#type: "button",
+                                                        title: "Move down",
+                                                        onclick: move |_| {
+                                                            let mut ids: Vec<i64> = books.read().iter().map(|b| b.id).collect();
+                                                            ids.swap(idx, idx + 1);
+                                                            let db = db_down.clone();
+                                                            spawn(async move {
+                                                                let conn = db.conn.lock().unwrap();
+                                                                let _ = reorder_collection_db(&conn, cid, &ids);
+                                                                if let Ok(b) = get_collection_books_db(&conn, cid) {
+                                                                    books.set(b);
+                                                                }
+                                                            });
+                                                        },
+                                                        class: "rounded p-0.5 text-gray-400
+                                                            hover:text-amber-600 dark:hover:text-amber-400",
+                                                        svg {
+                                                            class: "h-4 w-4",
+                                                            fill: "none",
+                                                            stroke: "currentColor",
+                                                            view_box: "0 0 24 24",
+                                                            path {
+                                                                stroke_linecap: "round",
+                                                                stroke_linejoin: "round",
+                                                                stroke_width: "2",
+                                                                d: "M19 9l-7 7-7-7",
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                button {
+                                                    r#type: "button",
+                                                    title: "Remove from collection",
+                                                    onclick: move |_| {
+                                                        let db = db_rm.clone();
+                                                        spawn(async move {
+                                                            let conn = db.conn.lock().unwrap();
+                                                            let _ = remove_book_from_collection_db(&conn, cid, bid);
+                                                            if let Ok(b) = get_collection_books_db(&conn, cid) {
+                                                                books.set(b);
+                                                            }
+                                                            drop(conn);
+                                                            on_changed.call(());
+                                                        });
+                                                    },
+                                                    class: "rounded p-0.5 text-gray-400
+                                                        hover:text-red-500 dark:hover:text-red-400",
+                                                    svg {
+                                                        class: "h-4 w-4",
+                                                        fill: "none",
+                                                        stroke: "currentColor",
+                                                        view_box: "0 0 24 24",
+                                                        path {
+                                                            stroke_linecap: "round",
+                                                            stroke_linejoin: "round",
+                                                            stroke_width: "2",
+                                                            d: "M6 18L18 6M6 6l12 12",
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -472,7 +484,7 @@ fn CollectionCard(
                                 collection_id: cid,
                                 existing_book_ids: books.read().iter().map(|b| b.id).collect(),
                                 on_added: move |_| {
-                                    let db = db.clone();
+                                    let db = db_picker.clone();
                                     spawn(async move {
                                         let conn = db.conn.lock().unwrap();
                                         if let Ok(b) = get_collection_books_db(&conn, cid) {
@@ -549,9 +561,12 @@ pub fn CollectionsView(on_select_book: EventHandler<i64>) -> Element {
                 div {
                     class: "mb-6",
                     CreateCollectionForm {
-                        on_created: move |_col: Collection| {
-                            show_create.set(false);
-                            reload();
+                        on_created: {
+                            let reload = reload.clone();
+                            move |_col: Collection| {
+                                show_create.set(false);
+                                reload();
+                            }
                         },
                     }
                 }
@@ -577,7 +592,10 @@ pub fn CollectionsView(on_select_book: EventHandler<i64>) -> Element {
                     CollectionCard {
                         key: "{col.id}",
                         collection: col.clone(),
-                        on_changed: move |_| reload(),
+                        on_changed: {
+                            let reload = reload.clone();
+                            move |_| reload()
+                        },
                         on_select_book: move |id: i64| on_select_book.call(id),
                     }
                 }

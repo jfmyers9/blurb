@@ -1275,3 +1275,561 @@ fn test_import_kindle_invalid_cover_base64_is_non_fatal() {
 
     let _ = std::fs::remove_dir_all(&tmp_dir);
 }
+
+// -- Goodreads import tests --
+
+use crate::services::goodreads::ParsedGoodreadsBook;
+
+fn make_goodreads_book(
+    title: &str,
+    author: Option<&str>,
+    isbn: Option<&str>,
+) -> ParsedGoodreadsBook {
+    ParsedGoodreadsBook {
+        title: title.to_string(),
+        author: author.map(|a| a.to_string()),
+        isbn: isbn.map(|i| i.to_string()),
+        publisher: None,
+        page_count: None,
+        published_date: None,
+        rating: None,
+        status: "want_to_read".to_string(),
+        date_read: None,
+        date_added: None,
+        review: None,
+        shelves: Vec::new(),
+    }
+}
+
+#[test]
+fn test_import_goodreads_basic() {
+    let mut conn = test_conn();
+    let books = vec![
+        make_goodreads_book(
+            "The Great Gatsby",
+            Some("F. Scott Fitzgerald"),
+            Some("9780743273565"),
+        ),
+        make_goodreads_book("Dune", Some("Frank Herbert"), Some("9780441172719")),
+    ];
+
+    let stats = import_goodreads_db(&mut conn, &books).unwrap();
+    assert_eq!(stats.books_imported, 2);
+    assert_eq!(stats.books_skipped, 0);
+
+    let all_books = list_books_db(&conn).unwrap();
+    assert_eq!(all_books.len(), 2);
+}
+
+#[test]
+fn test_import_goodreads_dedup_by_isbn() {
+    let mut conn = test_conn();
+    let books = vec![make_goodreads_book(
+        "Gatsby",
+        Some("Fitzgerald"),
+        Some("9780743273565"),
+    )];
+    import_goodreads_db(&mut conn, &books).unwrap();
+
+    let books2 = vec![make_goodreads_book(
+        "The Great Gatsby",
+        Some("F. Scott Fitzgerald"),
+        Some("9780743273565"),
+    )];
+    let stats = import_goodreads_db(&mut conn, &books2).unwrap();
+    assert_eq!(stats.books_imported, 0);
+    assert_eq!(stats.books_skipped, 1);
+}
+
+#[test]
+fn test_import_goodreads_dedup_by_title_author() {
+    let mut conn = test_conn();
+    let books = vec![make_goodreads_book(
+        "The Great Gatsby",
+        Some("F. Scott Fitzgerald"),
+        None,
+    )];
+    import_goodreads_db(&mut conn, &books).unwrap();
+
+    let books2 = vec![make_goodreads_book(
+        "The Great Gatsby",
+        Some("F. Scott Fitzgerald"),
+        None,
+    )];
+    let stats = import_goodreads_db(&mut conn, &books2).unwrap();
+    assert_eq!(stats.books_imported, 0);
+    assert_eq!(stats.books_skipped, 1);
+}
+
+#[test]
+fn test_import_goodreads_with_rating() {
+    let mut conn = test_conn();
+    let mut book = make_goodreads_book("Rated Book", Some("Author"), None);
+    book.rating = Some(5);
+    book.status = "finished".to_string();
+
+    let stats = import_goodreads_db(&mut conn, &[book]).unwrap();
+    assert_eq!(stats.books_imported, 1);
+
+    let all_books = list_books_db(&conn).unwrap();
+    assert_eq!(all_books[0].rating, Some(5));
+    assert_eq!(all_books[0].status, Some("finished".to_string()));
+}
+
+#[test]
+fn test_import_goodreads_with_diary_entry() {
+    let mut conn = test_conn();
+    let mut book = make_goodreads_book("Reviewed Book", Some("Author"), None);
+    book.rating = Some(4);
+    book.review = Some("Amazing read!".to_string());
+    book.date_read = Some("2023-06-15".to_string());
+    book.status = "finished".to_string();
+
+    let stats = import_goodreads_db(&mut conn, &[book]).unwrap();
+    assert_eq!(stats.entries_created, 1);
+
+    let entries = list_diary_entries_db(&conn).unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].body, Some("Amazing read!".to_string()));
+    assert_eq!(entries[0].rating, Some(4));
+    assert_eq!(entries[0].entry_date, "2023-06-15");
+}
+
+#[test]
+fn test_import_goodreads_with_shelves() {
+    let mut conn = test_conn();
+    let mut book = make_goodreads_book("Shelved Book", Some("Author"), None);
+    book.shelves = vec!["fiction".to_string(), "favorites".to_string()];
+
+    let stats = import_goodreads_db(&mut conn, &[book]).unwrap();
+    assert_eq!(stats.shelves_created, 2);
+
+    let shelves = list_shelves_db(&conn).unwrap();
+    assert_eq!(shelves.len(), 2);
+    let names: Vec<&str> = shelves.iter().map(|s| s.name.as_str()).collect();
+    assert!(names.contains(&"fiction"));
+    assert!(names.contains(&"favorites"));
+}
+
+#[test]
+fn test_import_goodreads_reuses_existing_shelves() {
+    let mut conn = test_conn();
+    create_shelf_db(&conn, "fiction").unwrap();
+
+    let mut book = make_goodreads_book("Book", Some("Author"), None);
+    book.shelves = vec!["fiction".to_string(), "new-shelf".to_string()];
+
+    let stats = import_goodreads_db(&mut conn, &[book]).unwrap();
+    assert_eq!(stats.shelves_created, 1);
+
+    let shelves = list_shelves_db(&conn).unwrap();
+    assert_eq!(shelves.len(), 2);
+}
+
+#[test]
+fn test_import_goodreads_finished_date() {
+    let mut conn = test_conn();
+    let mut book = make_goodreads_book("Finished Book", Some("Author"), None);
+    book.status = "finished".to_string();
+    book.date_read = Some("2023-12-25".to_string());
+
+    import_goodreads_db(&mut conn, &[book]).unwrap();
+
+    let all_books = list_books_db(&conn).unwrap();
+    assert_eq!(all_books[0].finished_at, Some("2023-12-25".to_string()));
+}
+
+// -- Book notes tests --
+
+#[test]
+fn test_create_and_list_book_notes() {
+    let conn = test_conn();
+    let book_id = add_book_db(
+        &conn, "Noted", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    let note = create_book_note_db(&conn, book_id, "Great opening chapter", "yellow").unwrap();
+    assert_eq!(note.book_id, book_id);
+    assert_eq!(note.content, "Great opening chapter");
+    assert_eq!(note.color, "yellow");
+    assert!(!note.pinned);
+
+    create_book_note_db(&conn, book_id, "Interesting theme", "blue").unwrap();
+
+    let notes = list_book_notes_db(&conn, book_id).unwrap();
+    assert_eq!(notes.len(), 2);
+    assert_eq!(notes[0].content, "Interesting theme", "newest first");
+}
+
+#[test]
+fn test_update_book_note() {
+    let conn = test_conn();
+    let book_id = add_book_db(
+        &conn, "Book", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    let note = create_book_note_db(&conn, book_id, "Original", "yellow").unwrap();
+    update_book_note_db(&conn, note.id, "Updated", "pink", true).unwrap();
+
+    let notes = list_book_notes_db(&conn, book_id).unwrap();
+    assert_eq!(notes[0].content, "Updated");
+    assert_eq!(notes[0].color, "pink");
+    assert!(notes[0].pinned);
+}
+
+#[test]
+fn test_delete_book_note() {
+    let conn = test_conn();
+    let book_id = add_book_db(
+        &conn, "Book", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    let note = create_book_note_db(&conn, book_id, "Temp", "green").unwrap();
+    assert_eq!(list_book_notes_db(&conn, book_id).unwrap().len(), 1);
+
+    delete_book_note_db(&conn, note.id).unwrap();
+    assert_eq!(list_book_notes_db(&conn, book_id).unwrap().len(), 0);
+}
+
+#[test]
+fn test_pinned_notes_sort_first() {
+    let conn = test_conn();
+    let book_id = add_book_db(
+        &conn, "Book", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    let n1 = create_book_note_db(&conn, book_id, "First", "yellow").unwrap();
+    create_book_note_db(&conn, book_id, "Second", "blue").unwrap();
+
+    update_book_note_db(&conn, n1.id, "First", "yellow", true).unwrap();
+
+    let notes = list_book_notes_db(&conn, book_id).unwrap();
+    assert_eq!(notes[0].id, n1.id, "pinned note should be first");
+    assert!(notes[0].pinned);
+}
+
+#[test]
+fn test_delete_book_cascades_notes() {
+    let conn = test_conn();
+    let book_id = add_book_db(
+        &conn, "Doomed", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    create_book_note_db(&conn, book_id, "Note", "yellow").unwrap();
+    delete_book_db(&conn, book_id).unwrap();
+
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM book_notes WHERE book_id = ?1",
+            [book_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 0);
+}
+
+// -- Collection tests --
+
+fn add_test_book(conn: &rusqlite::Connection, title: &str) -> i64 {
+    add_book_db(
+        conn,
+        title,
+        Some("Author"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap()
+}
+
+#[test]
+fn create_and_list_collections() {
+    let conn = test_conn();
+    let col = create_collection_db(&conn, "Best Sci-Fi", Some("Top picks")).unwrap();
+    assert_eq!(col.name, "Best Sci-Fi");
+    assert_eq!(col.description.as_deref(), Some("Top picks"));
+    assert_eq!(col.book_count, 0);
+
+    let cols = list_collections_db(&conn).unwrap();
+    assert_eq!(cols.len(), 1);
+    assert_eq!(cols[0].id, col.id);
+}
+
+#[test]
+fn create_collection_empty_name_fails() {
+    let conn = test_conn();
+    let err = create_collection_db(&conn, "  ", None).unwrap_err();
+    assert!(err.contains("empty"), "{err}");
+}
+
+#[test]
+fn add_and_retrieve_books_in_order() {
+    let conn = test_conn();
+    let col = create_collection_db(&conn, "Reading List", None).unwrap();
+    let b1 = add_test_book(&conn, "Book A");
+    let b2 = add_test_book(&conn, "Book B");
+    let b3 = add_test_book(&conn, "Book C");
+
+    add_book_to_collection_db(&conn, col.id, b2).unwrap();
+    add_book_to_collection_db(&conn, col.id, b1).unwrap();
+    add_book_to_collection_db(&conn, col.id, b3).unwrap();
+
+    let books = get_collection_books_db(&conn, col.id).unwrap();
+    assert_eq!(books.len(), 3);
+    assert_eq!(books[0].id, b2);
+    assert_eq!(books[1].id, b1);
+    assert_eq!(books[2].id, b3);
+}
+
+#[test]
+fn duplicate_add_is_ignored() {
+    let conn = test_conn();
+    let col = create_collection_db(&conn, "Dupes", None).unwrap();
+    let b1 = add_test_book(&conn, "Book");
+    add_book_to_collection_db(&conn, col.id, b1).unwrap();
+    add_book_to_collection_db(&conn, col.id, b1).unwrap();
+    let books = get_collection_books_db(&conn, col.id).unwrap();
+    assert_eq!(books.len(), 1);
+}
+
+#[test]
+fn remove_book_from_collection() {
+    let conn = test_conn();
+    let col = create_collection_db(&conn, "Remove Test", None).unwrap();
+    let b1 = add_test_book(&conn, "Stay");
+    let b2 = add_test_book(&conn, "Remove Me");
+    add_book_to_collection_db(&conn, col.id, b1).unwrap();
+    add_book_to_collection_db(&conn, col.id, b2).unwrap();
+
+    remove_book_from_collection_db(&conn, col.id, b2).unwrap();
+    let books = get_collection_books_db(&conn, col.id).unwrap();
+    assert_eq!(books.len(), 1);
+    assert_eq!(books[0].id, b1);
+}
+
+#[test]
+fn reorder_collection() {
+    let conn = test_conn();
+    let col = create_collection_db(&conn, "Reorder", None).unwrap();
+    let b1 = add_test_book(&conn, "First");
+    let b2 = add_test_book(&conn, "Second");
+    let b3 = add_test_book(&conn, "Third");
+    add_book_to_collection_db(&conn, col.id, b1).unwrap();
+    add_book_to_collection_db(&conn, col.id, b2).unwrap();
+    add_book_to_collection_db(&conn, col.id, b3).unwrap();
+
+    reorder_collection_db(&conn, col.id, &[b3, b1, b2]).unwrap();
+    let books = get_collection_books_db(&conn, col.id).unwrap();
+    assert_eq!(books[0].id, b3);
+    assert_eq!(books[1].id, b1);
+    assert_eq!(books[2].id, b2);
+}
+
+#[test]
+fn delete_collection_cascades() {
+    let conn = test_conn();
+    let col = create_collection_db(&conn, "Delete Me", None).unwrap();
+    let b1 = add_test_book(&conn, "Survivor");
+    add_book_to_collection_db(&conn, col.id, b1).unwrap();
+
+    delete_collection_db(&conn, col.id).unwrap();
+    let cols = list_collections_db(&conn).unwrap();
+    assert!(cols.is_empty());
+
+    let book = get_book_db(&conn, b1).unwrap();
+    assert_eq!(book.title, "Survivor");
+}
+
+#[test]
+fn list_collections_includes_book_count() {
+    let conn = test_conn();
+    let col = create_collection_db(&conn, "Counted", None).unwrap();
+    let b1 = add_test_book(&conn, "One");
+    let b2 = add_test_book(&conn, "Two");
+    add_book_to_collection_db(&conn, col.id, b1).unwrap();
+    add_book_to_collection_db(&conn, col.id, b2).unwrap();
+
+    let cols = list_collections_db(&conn).unwrap();
+    assert_eq!(cols[0].book_count, 2);
+}
+
+// -- FTS search tests --
+
+#[test]
+fn test_search_books_fts_finds_by_title() {
+    let conn = test_conn();
+    add_book_db(
+        &conn,
+        "The Great Gatsby",
+        Some("F. Scott Fitzgerald"),
+        None,
+        None,
+        None,
+        Some("A novel about wealth and the American dream"),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    add_book_db(
+        &conn, "1984", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    let results = search_books_fts_db(&conn, "gatsby").unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].title, "The Great Gatsby");
+}
+
+#[test]
+fn test_search_books_fts_finds_by_author() {
+    let conn = test_conn();
+    add_book_db(
+        &conn,
+        "The Great Gatsby",
+        Some("F. Scott Fitzgerald"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let results = search_books_fts_db(&conn, "fitzgerald").unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].title, "The Great Gatsby");
+}
+
+#[test]
+fn test_search_books_fts_finds_by_description() {
+    let conn = test_conn();
+    add_book_db(
+        &conn,
+        "Some Title",
+        None,
+        None,
+        None,
+        None,
+        Some("A deep dive into quantum mechanics"),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let results = search_books_fts_db(&conn, "quantum").unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].title, "Some Title");
+}
+
+#[test]
+fn test_search_books_fts_empty_query() {
+    let conn = test_conn();
+    add_book_db(
+        &conn, "Test", None, None, None, None, None, None, None, None,
+    )
+    .unwrap();
+
+    let results = search_books_fts_db(&conn, "").unwrap();
+    assert!(results.is_empty());
+}
+
+#[test]
+fn test_search_books_fts_prefix_matching() {
+    let conn = test_conn();
+    add_book_db(
+        &conn,
+        "Programming Rust",
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let results = search_books_fts_db(&conn, "prog").unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].title, "Programming Rust");
+}
+
+#[test]
+fn test_search_books_fts_stays_in_sync_after_update() {
+    let conn = test_conn();
+    let id = add_book_db(
+        &conn,
+        "Old Title",
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    update_book_db(
+        &conn,
+        id,
+        "New Title",
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let old_results = search_books_fts_db(&conn, "Old").unwrap();
+    assert!(
+        old_results.is_empty(),
+        "old title should not match after update"
+    );
+
+    let new_results = search_books_fts_db(&conn, "New").unwrap();
+    assert_eq!(new_results.len(), 1);
+    assert_eq!(new_results[0].title, "New Title");
+}
+
+#[test]
+fn test_search_books_fts_stays_in_sync_after_delete() {
+    let conn = test_conn();
+    let id = add_book_db(
+        &conn,
+        "Deletable Book",
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    delete_book_db(&conn, id).unwrap();
+
+    let results = search_books_fts_db(&conn, "deletable").unwrap();
+    assert!(results.is_empty());
+}

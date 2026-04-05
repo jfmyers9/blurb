@@ -11,6 +11,7 @@ use crate::services::metadata;
 use crate::services::purchase_links;
 use crate::DatabaseHandle;
 
+use super::book_notes::BookNotes;
 use super::diary_entry_form::DiaryEntryForm;
 use super::rating_stars::RatingStars;
 use super::shelf_picker::ShelfPicker;
@@ -921,12 +922,53 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                     }
                 }
 
+                // Notes
+                div {
+                    class: "border-t border-gray-200 pt-4 dark:border-gray-700",
+                    BookNotes { book_id: book_id }
+                }
+
                 // Highlights
                 div {
                     class: "border-t border-gray-200 pt-4 dark:border-gray-700",
-                    label {
-                        class: "mb-2 block text-xs font-medium text-gray-500 dark:text-gray-400",
-                        "Highlights"
+                    div {
+                        class: "mb-2 flex items-center justify-between",
+                        label {
+                            class: "block text-xs font-medium text-gray-500 dark:text-gray-400",
+                            "Highlights"
+                        }
+                        if !highlights.read().is_empty() {
+                            {
+                                let bk = bk.clone();
+                                rsx! {
+                                    button {
+                                        class: "rounded px-2 py-0.5 text-[10px] font-medium text-indigo-600
+                                            hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-900/30",
+                                        onclick: move |_| {
+                                            let title = bk.title.clone();
+                                            let author = bk.author.clone();
+                                            let hl = highlights.read().clone();
+                                            spawn(async move {
+                                                let md = crate::services::export::export_book_highlights_markdown(
+                                                    &title,
+                                                    author.as_deref(),
+                                                    &hl,
+                                                );
+                                                let dialog = rfd::AsyncFileDialog::new()
+                                                    .set_file_name("highlights.md")
+                                                    .add_filter("Markdown", &["md"])
+                                                    .save_file()
+                                                    .await;
+                                                if let Some(file) = dialog {
+                                                    let _ = std::fs::write(file.path(), md.as_bytes());
+                                                }
+                                            });
+                                        },
+                                        "Export"
+                                    }
+                                }
+                            }
+                        }
                     }
                     if highlights.read().is_empty() {
                         p {

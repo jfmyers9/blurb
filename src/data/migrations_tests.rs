@@ -15,11 +15,20 @@ fn migration_1_creates_all_tables() {
     assert_eq!(
         tables,
         vec![
+            "book_notes",
             "book_shelves",
             "books",
+            "books_fts",
+            "books_fts_config",
+            "books_fts_data",
+            "books_fts_docsize",
+            "books_fts_idx",
+            "collection_books",
+            "collections",
             "diary_entries",
             "highlights",
             "ratings",
+            "reading_goals",
             "reading_status",
             "reviews",
             "settings",
@@ -31,16 +40,16 @@ fn migration_1_creates_all_tables() {
 #[test]
 fn run_migrations_preserves_existing_version() {
     let conn = Connection::open_in_memory().unwrap();
-    set_user_version(&conn, 5).unwrap();
+    set_user_version(&conn, 99).unwrap();
     run_migrations(&conn).unwrap();
-    assert_eq!(get_user_version(&conn).unwrap(), 5);
+    assert_eq!(get_user_version(&conn).unwrap(), 99);
 }
 
 #[test]
 fn fresh_db_reaches_latest_version_with_indexes() {
     let conn = Connection::open_in_memory().unwrap();
     run_migrations(&conn).unwrap();
-    assert_eq!(get_user_version(&conn).unwrap(), 4);
+    assert_eq!(get_user_version(&conn).unwrap(), 8);
 
     let mut stmt = conn
         .prepare(
@@ -55,8 +64,10 @@ fn fresh_db_reaches_latest_version_with_indexes() {
     assert_eq!(
         indexes,
         vec![
+            "idx_book_notes_book_id",
             "idx_book_shelves_book_id",
             "idx_book_shelves_shelf_id",
+            "idx_collection_books_collection",
             "idx_diary_entries_book_date",
             "idx_highlights_book_id",
             "idx_ratings_book_id",
@@ -81,7 +92,7 @@ fn incremental_upgrade_from_version_1_to_latest() {
     .unwrap();
 
     run_migrations(&conn).unwrap();
-    assert_eq!(get_user_version(&conn).unwrap(), 4);
+    assert_eq!(get_user_version(&conn).unwrap(), 8);
 
     let title: String = conn
         .query_row("SELECT title FROM books WHERE id = 1", [], |row| row.get(0))
@@ -95,7 +106,7 @@ fn incremental_upgrade_from_version_1_to_latest() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(idx_count, 7);
+    assert_eq!(idx_count, 9);
 }
 
 #[test]
@@ -167,7 +178,7 @@ fn run_migrations_is_idempotent() {
     let conn = Connection::open_in_memory().unwrap();
     run_migrations(&conn).unwrap();
     run_migrations(&conn).unwrap();
-    assert_eq!(get_user_version(&conn).unwrap(), 4);
+    assert_eq!(get_user_version(&conn).unwrap(), 8);
 }
 
 #[test]

@@ -11,16 +11,21 @@ use super::add_book_form::AddBookForm;
 use super::book_detail::BookDetail;
 use super::command_palette::CommandPalette;
 use super::diary_feed::DiaryFeed;
+use super::goodreads_import::GoodreadsImport;
 use super::kindle_sync::KindleSync;
+use super::letterboxd_import::LetterboxdImport;
 use super::library_grid::LibraryGrid;
 use super::library_list::LibraryList;
+use super::reading_goals::ReadingGoals;
 use super::settings_view::SettingsView;
+use super::stats_view::StatsView;
 use super::status_filter_bar::StatusFilterBar;
 
 #[derive(Clone, Copy, PartialEq)]
 enum AppView {
     Library,
     Diary,
+    Stats,
 }
 
 #[component]
@@ -36,6 +41,8 @@ pub fn App() -> Element {
     let mut show_kindle_sync = use_signal(|| false);
     let mut show_settings = use_signal(|| false);
     let mut palette_open = use_signal(|| false);
+    let mut show_goodreads_import = use_signal(|| false);
+    let mut show_letterboxd_import = use_signal(|| false);
     let mut current_view = use_signal(|| AppView::Library);
 
     let reload_data = {
@@ -129,6 +136,16 @@ pub fn App() -> Element {
                             },
                             "Diary"
                         }
+                        button {
+                            r#type: "button",
+                            onclick: move |_| current_view.set(AppView::Stats),
+                            class: if *current_view.read() == AppView::Stats {
+                                "rounded-md px-3 py-1 text-sm font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+                            } else {
+                                "rounded-md px-3 py-1 text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                            },
+                            "Stats"
+                        }
                     }
                 }
                 div {
@@ -159,6 +176,48 @@ pub fn App() -> Element {
                             class: "ml-2 hidden rounded bg-gray-100 px-1.5 py-0.5 text-xs
                                 font-medium text-gray-500 sm:inline dark:bg-gray-700 dark:text-gray-400",
                             "\u{2318}K"
+                        }
+                    }
+                    // Goodreads import button
+                    button {
+                        r#type: "button",
+                        title: "Import from Goodreads",
+                        onclick: move |_| show_goodreads_import.set(true),
+                        class: "flex h-9 w-9 items-center justify-center rounded-full
+                            text-gray-400 transition hover:bg-gray-100 hover:text-gray-600
+                            dark:hover:bg-gray-800 dark:hover:text-gray-300",
+                        svg {
+                            class: "h-5 w-5",
+                            fill: "none",
+                            stroke: "currentColor",
+                            view_box: "0 0 24 24",
+                            path {
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                stroke_width: "1.5",
+                                d: "M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5",
+                            }
+                        }
+                    }
+                    // Letterboxd import button
+                    button {
+                        r#type: "button",
+                        title: "Letterboxd Import",
+                        onclick: move |_| show_letterboxd_import.set(true),
+                        class: "flex h-9 w-9 items-center justify-center rounded-full
+                            text-gray-400 transition hover:bg-gray-100 hover:text-gray-600
+                            dark:hover:bg-gray-800 dark:hover:text-gray-300",
+                        svg {
+                            class: "h-5 w-5",
+                            fill: "none",
+                            stroke: "currentColor",
+                            view_box: "0 0 24 24",
+                            path {
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                stroke_width: "1.5",
+                                d: "M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 01-1.125-1.125M3.375 19.5h1.5C5.496 19.5 6 18.996 6 18.375m-2.625 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-1.5A1.125 1.125 0 0118 18.375M20.625 4.5H3.375m17.25 0c.621 0 1.125.504 1.125 1.125M20.625 4.5h-1.5C18.504 4.5 18 5.004 18 5.625m3.75 0v1.5c0 .621-.504 1.125-1.125 1.125M3.375 4.5c-.621 0-1.125.504-1.125 1.125M3.375 4.5h1.5C5.496 4.5 6 5.004 6 5.625m-2.625 0v1.5c0 .621.504 1.125 1.125 1.125m0 0h13.5c.621 0 1.125-.504 1.125-1.125m-14.625 0h14.625",
+                            }
                         }
                     }
                     // Settings button
@@ -300,9 +359,22 @@ pub fn App() -> Element {
                         }
                     },
                     AppView::Diary => rsx! {
-                        DiaryFeed {
-                            on_select_book: move |id: i64| selected_book_id.set(Some(id)),
+                        div {
+                            class: "flex gap-6 p-6",
+                            div {
+                                class: "flex-1",
+                                DiaryFeed {
+                                    on_select_book: move |id: i64| selected_book_id.set(Some(id)),
+                                }
+                            }
+                            div {
+                                class: "w-80 shrink-0",
+                                ReadingGoals {}
+                            }
                         }
+                    },
+                    AppView::Stats => rsx! {
+                        StatsView {}
                     },
                 }
             }
@@ -360,6 +432,24 @@ pub fn App() -> Element {
             }
         }
 
+        // Goodreads import modal
+        if *show_goodreads_import.read() {
+            GoodreadsImport {
+                on_close: move |_| show_goodreads_import.set(false),
+                on_import_complete: {
+                    let reload_data = reload_data.clone();
+                    move |_| reload_data()
+                },
+            }
+        }
+
+        // Letterboxd import modal
+        if *show_letterboxd_import.read() {
+            LetterboxdImport {
+                on_close: move |_| show_letterboxd_import.set(false),
+            }
+        }
+
         // Command palette overlay
         CommandPalette {
             is_open: *palette_open.read(),
@@ -383,6 +473,47 @@ pub fn App() -> Element {
                     }
                     "kindle-sync" => show_kindle_sync.set(true),
                     "settings" => show_settings.set(true),
+                    "switch-stats" => current_view.set(AppView::Stats),
+                    "import-goodreads" => show_goodreads_import.set(true),
+                    "letterboxd-import" => show_letterboxd_import.set(true),
+                    "export-all-highlights" => {
+                        let db = db.clone();
+                        spawn(async move {
+                            let md = {
+                                let conn = db.conn.lock().unwrap();
+                                crate::services::export::export_all_highlights_markdown(&conn)
+                            };
+                            if let Ok(md) = md {
+                                let dialog = rfd::AsyncFileDialog::new()
+                                    .set_file_name("all-highlights.md")
+                                    .add_filter("Markdown", &["md"])
+                                    .save_file()
+                                    .await;
+                                if let Some(file) = dialog {
+                                    let _ = std::fs::write(file.path(), md.as_bytes());
+                                }
+                            }
+                        });
+                    }
+                    "export-library-json" => {
+                        let db = db.clone();
+                        spawn(async move {
+                            let json = {
+                                let conn = db.conn.lock().unwrap();
+                                crate::services::export::export_library_json(&conn)
+                            };
+                            if let Ok(json) = json {
+                                let dialog = rfd::AsyncFileDialog::new()
+                                    .set_file_name("blurb-library.json")
+                                    .add_filter("JSON", &["json"])
+                                    .save_file()
+                                    .await;
+                                if let Some(file) = dialog {
+                                    let _ = std::fs::write(file.path(), json.as_bytes());
+                                }
+                            }
+                        });
+                    }
                     _ => {}
                 }
             },

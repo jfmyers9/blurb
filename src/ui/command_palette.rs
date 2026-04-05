@@ -38,6 +38,31 @@ const COMMANDS: &[PaletteCommand] = &[
         label: "Open Kindle Sync",
         keywords: &["kindle", "sync", "import", "device"],
     },
+    PaletteCommand {
+        id: "switch-stats",
+        label: "Switch to Stats",
+        keywords: &["view", "stats", "statistics", "dashboard", "analytics"],
+    },
+    PaletteCommand {
+        id: "export-all-highlights",
+        label: "Export All Highlights (Markdown)",
+        keywords: &["export", "highlights", "markdown", "md"],
+    },
+    PaletteCommand {
+        id: "export-library-json",
+        label: "Export Library (JSON)",
+        keywords: &["export", "library", "json", "backup"],
+    },
+    PaletteCommand {
+        id: "import-goodreads",
+        label: "Import from Goodreads",
+        keywords: &["goodreads", "import", "csv", "export"],
+    },
+    PaletteCommand {
+        id: "letterboxd-import",
+        label: "Import Letterboxd Data",
+        keywords: &["letterboxd", "movie", "film", "import", "csv"],
+    },
 ];
 
 #[derive(Clone, PartialEq)]

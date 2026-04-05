@@ -54,6 +54,60 @@ pub struct Highlight {
     pub created_at: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReadingStats {
+    pub total_books: usize,
+    pub books_finished: usize,
+    pub books_reading: usize,
+    pub books_want_to_read: usize,
+    pub books_abandoned: usize,
+    pub total_pages_read: i64,
+    pub avg_rating: Option<f64>,
+    pub total_diary_entries: usize,
+    pub total_highlights: usize,
+    pub books_per_month: Vec<(String, usize)>,
+    pub top_rated_books: Vec<(String, String, i32)>,
+    pub rating_distribution: [usize; 5],
+    pub recent_activity: Vec<(String, String, String)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReadingGoal {
+    pub id: i64,
+    pub year: i32,
+    pub target_books: i32,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReadingGoalProgress {
+    pub goal: ReadingGoal,
+    pub books_finished: i32,
+    pub percent_complete: f64,
+    pub on_track: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BookNote {
+    pub id: i64,
+    pub book_id: i64,
+    pub content: String,
+    pub color: String,
+    pub pinned: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Collection {
+    pub id: i64,
+    pub name: String,
+    pub description: Option<String>,
+    pub book_count: usize,
+    pub created_at: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HighlightSearchResult {
     pub id: i64,

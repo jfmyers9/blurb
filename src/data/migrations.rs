@@ -129,6 +129,94 @@ fn migrations() -> Vec<Migration> {
                 )
             },
         },
+        Migration {
+            version: 5,
+            description: "add reading_goals table",
+            up: |conn| {
+                conn.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS reading_goals(
+                        id INTEGER PRIMARY KEY,
+                        year INTEGER NOT NULL UNIQUE,
+                        target_books INTEGER NOT NULL,
+                        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                    );",
+                )
+            },
+        },
+        Migration {
+            version: 6,
+            description: "add book_notes table",
+            up: |conn| {
+                conn.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS book_notes(
+                        id INTEGER PRIMARY KEY,
+                        book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                        content TEXT NOT NULL,
+                        color TEXT DEFAULT 'yellow',
+                        pinned INTEGER DEFAULT 0,
+                        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_book_notes_book_id ON book_notes(book_id);",
+                )
+            },
+        },
+        Migration {
+            version: 7,
+            description: "add collections tables",
+            up: |conn| {
+                conn.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS collections(
+                        id INTEGER PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        description TEXT,
+                        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                    );
+                    CREATE TABLE IF NOT EXISTS collection_books(
+                        collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+                        book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                        position INTEGER NOT NULL DEFAULT 0,
+                        added_at TEXT NOT NULL DEFAULT (datetime('now')),
+                        UNIQUE(collection_id, book_id)
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_collection_books_collection
+                        ON collection_books(collection_id, position);",
+                )
+            },
+        },
+        Migration {
+            version: 8,
+            description: "add FTS5 full-text search on books",
+            up: |conn| {
+                conn.execute_batch(
+                    "CREATE VIRTUAL TABLE IF NOT EXISTS books_fts USING fts5(
+                        title, author, description, content=books, content_rowid=id
+                    );
+
+                    CREATE TRIGGER IF NOT EXISTS books_ai AFTER INSERT ON books BEGIN
+                        INSERT INTO books_fts(rowid, title, author, description)
+                        VALUES (new.id, new.title, new.author, new.description);
+                    END;
+
+                    CREATE TRIGGER IF NOT EXISTS books_ad AFTER DELETE ON books BEGIN
+                        INSERT INTO books_fts(books_fts, rowid, title, author, description)
+                        VALUES('delete', old.id, old.title, old.author, old.description);
+                    END;
+
+                    CREATE TRIGGER IF NOT EXISTS books_au AFTER UPDATE ON books BEGIN
+                        INSERT INTO books_fts(books_fts, rowid, title, author, description)
+                        VALUES('delete', old.id, old.title, old.author, old.description);
+                        INSERT INTO books_fts(rowid, title, author, description)
+                        VALUES (new.id, new.title, new.author, new.description);
+                    END;
+
+                    INSERT OR IGNORE INTO books_fts(rowid, title, author, description)
+                    SELECT id, title, author, description FROM books;",
+                )
+            },
+        },
     ]
 }
 
