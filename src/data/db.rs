@@ -8,7 +8,7 @@ pub fn init_db() -> Result<Connection, String> {
         .join("com.blurb.app");
     fs::create_dir_all(&app_dir).map_err(|e| e.to_string())?;
 
-    let db_path = app_dir.join("books.db");
+    let db_path = app_dir.join("blurb.db");
     let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
 
     crate::data::migrations::run_migrations(&conn)?;
