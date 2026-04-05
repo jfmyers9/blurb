@@ -11,6 +11,19 @@ env:
   DX_VERSION: "0.7.2"
 
 jobs:
+  editor-bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: editor/package-lock.json
+      - run: cd editor && npm ci && node build.js
+      - name: Check bundle is up to date
+        run: git diff --exit-code assets/tiptap-bundle.js
+
   fmt:
     runs-on: ubuntu-latest
     steps:
