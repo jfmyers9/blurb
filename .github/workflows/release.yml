@@ -13,6 +13,9 @@ on:
 permissions:
   contents: write
 
+env:
+  DX_VERSION: "0.7.2"
+
 jobs:
   changelog:
     runs-on: ubuntu-latest
@@ -76,20 +79,12 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+      - uses: Swatinem/rust-cache@v2
 
       - name: Install dioxus-cli
-        run: cargo install dioxus-cli --locked
+        uses: taiki-e/install-action@v2
+        with:
+          tool: dioxus-cli@${{ env.DX_VERSION }}
 
       - name: Install jq (Windows)
         if: matrix.platform == 'windows-latest'
