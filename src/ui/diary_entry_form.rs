@@ -198,6 +198,7 @@ pub fn DiaryEntryForm(props: DiaryEntryFormProps) -> Element {
                             rating: *rating.read(),
                             on_rate: move |_: i32| {},
                             small: true,
+                            readonly: true,
                         }
                     }
 
