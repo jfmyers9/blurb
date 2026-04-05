@@ -1,11 +1,11 @@
 use dioxus::prelude::*;
-use pulldown_cmark::{Options, Parser};
 
 use crate::data::commands::{create_diary_entry_db, update_diary_entry_db};
 use crate::data::models::DiaryEntry;
 use crate::DatabaseHandle;
 
 use super::rating_stars::RatingStars;
+use super::tiptap_editor::TipTapEditor;
 
 fn today_string() -> String {
     let now = std::time::SystemTime::now()
@@ -47,14 +47,6 @@ fn is_leap(y: i32) -> bool {
     (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
 }
 
-fn render_markdown(md: &str) -> String {
-    let opts = Options::empty();
-    let parser = Parser::new_ext(md, opts);
-    let mut html = String::new();
-    pulldown_cmark::html::push_html(&mut html, parser);
-    html
-}
-
 #[derive(Props, Clone, PartialEq)]
 pub struct DiaryEntryFormProps {
     book_id: i64,
@@ -90,8 +82,6 @@ pub fn DiaryEntryForm(props: DiaryEntryFormProps) -> Element {
     let mut entry_id: Signal<Option<i64>> = use_signal(|| initial_id);
     let mut save_status = use_signal(|| "idle");
     let mut is_read_mode = use_signal(|| starts_in_read);
-
-    let preview_html = render_markdown(&body.read());
 
     let save = {
         let db = db.clone();
@@ -148,12 +138,6 @@ pub fn DiaryEntryForm(props: DiaryEntryFormProps) -> Element {
             save(());
         }
     };
-
-    fn append_syntax(body: &mut Signal<String>, prefix: &str, suffix: &str) {
-        let current = body.read().clone();
-        let new_val = format!("{current}{prefix}text{suffix}");
-        body.set(new_val);
-    }
 
     rsx! {
         div {
@@ -263,17 +247,12 @@ pub fn DiaryEntryForm(props: DiaryEntryFormProps) -> Element {
             }
 
             if *is_read_mode.read() {
-                // Full-width preview in read mode
                 div {
-                    class: "flex-1 overflow-y-auto bg-white dark:bg-gray-800/80",
-                    div {
-                        class: "mx-auto max-w-3xl px-10 py-12",
-                        div {
-                            class: "prose dark:prose-invert max-w-none text-sm
-                                prose-headings:text-gray-800 dark:prose-headings:text-gray-200
-                                prose-p:text-gray-700 dark:prose-p:text-gray-300",
-                            dangerous_inner_html: "{preview_html}",
-                        }
+                    class: "flex-1 overflow-y-auto",
+                    TipTapEditor {
+                        content: body.read().clone(),
+                        on_change: move |_: String| {},
+                        editable: false,
                     }
                 }
 
@@ -296,86 +275,12 @@ pub fn DiaryEntryForm(props: DiaryEntryFormProps) -> Element {
                     }
                 }
             } else {
-                // Markdown toolbar
                 div {
-                    class: "flex items-center gap-0.5 border-b border-gray-200 px-4 py-2 dark:border-gray-700",
-                    button {
-                        r#type: "button",
-                        title: "Bold",
-                        onclick: move |_| append_syntax(&mut body, "**", "**"),
-                        class: "rounded-md p-2 text-gray-600 transition-colors hover:bg-gray-100
-                            dark:text-gray-400 dark:hover:bg-gray-800",
-                        span { class: "text-sm font-bold", "B" }
-                    }
-                    button {
-                        r#type: "button",
-                        title: "Italic",
-                        onclick: move |_| append_syntax(&mut body, "*", "*"),
-                        class: "rounded-md p-2 text-gray-600 transition-colors hover:bg-gray-100
-                            dark:text-gray-400 dark:hover:bg-gray-800",
-                        span { class: "text-sm italic", "I" }
-                    }
-                    button {
-                        r#type: "button",
-                        title: "Heading",
-                        onclick: move |_| append_syntax(&mut body, "## ", ""),
-                        class: "rounded-md p-2 text-gray-600 transition-colors hover:bg-gray-100
-                            dark:text-gray-400 dark:hover:bg-gray-800",
-                        span { class: "text-sm font-medium", "H" }
-                    }
-                    button {
-                        r#type: "button",
-                        title: "List",
-                        onclick: move |_| append_syntax(&mut body, "- ", ""),
-                        class: "rounded-md p-2 text-gray-600 transition-colors hover:bg-gray-100
-                            dark:text-gray-400 dark:hover:bg-gray-800",
-                        span { class: "text-sm font-medium", "-" }
-                    }
-                    button {
-                        r#type: "button",
-                        title: "Quote",
-                        onclick: move |_| append_syntax(&mut body, "> ", ""),
-                        class: "rounded-md p-2 text-gray-600 transition-colors hover:bg-gray-100
-                            dark:text-gray-400 dark:hover:bg-gray-800",
-                        span { class: "text-sm font-medium", ">" }
-                    }
-                }
-
-                // Editor and preview
-                div {
-                    class: "flex flex-1 overflow-hidden",
-
-                    // Markdown editor
-                    div {
-                        class: "flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900",
-                        div {
-                            class: "mx-auto max-w-3xl px-6 py-6",
-                            textarea {
-                                value: "{body}",
-                                oninput: move |e| body.set(e.value()),
-                                placeholder: "Write your thoughts in Markdown...",
-                                class: "min-h-[60vh] w-full resize-none rounded-xl bg-white px-10 py-12
-                                    text-sm leading-relaxed text-gray-700 shadow-sm ring-1
-                                    ring-gray-200/50 placeholder-gray-400 outline-none
-                                    dark:bg-gray-800/80 dark:text-gray-300 dark:ring-gray-700/50
-                                    dark:placeholder-gray-500",
-                            }
-                        }
-                    }
-
-                    // Live preview
-                    div {
-                        class: "flex-1 overflow-y-auto border-l border-gray-200 bg-white
-                            dark:border-gray-700 dark:bg-gray-800/80",
-                        div {
-                            class: "mx-auto max-w-3xl px-10 py-12",
-                            div {
-                                class: "prose dark:prose-invert max-w-none text-sm
-                                    prose-headings:text-gray-800 dark:prose-headings:text-gray-200
-                                    prose-p:text-gray-700 dark:prose-p:text-gray-300",
-                                dangerous_inner_html: "{preview_html}",
-                            }
-                        }
+                    class: "flex-1 overflow-y-auto",
+                    TipTapEditor {
+                        content: body.read().clone(),
+                        on_change: move |md: String| body.set(md),
+                        editable: true,
                     }
                 }
 

@@ -85,6 +85,8 @@ pub fn App() -> Element {
 
     rsx! {
         link { rel: "stylesheet", href: asset!("/assets/tailwind.css") }
+        link { rel: "stylesheet", href: asset!("/assets/editor.css") }
+        script { src: asset!("/assets/tiptap-bundle.js") }
 
         div {
             class: "flex min-h-screen flex-col bg-gray-50 dark:bg-gray-950",

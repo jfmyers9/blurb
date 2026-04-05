@@ -1,0 +1,14 @@
+{
+  "name": "blurb-editor",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "@tiptap/core": "^2.11.5",
+    "@tiptap/pm": "^2.11.5",
+    "@tiptap/starter-kit": "^2.11.5",
+    "tiptap-markdown": "^0.8.10"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.2"
+  }
+}
