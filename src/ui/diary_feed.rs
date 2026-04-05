@@ -68,7 +68,7 @@ fn extract_plain_text(body: &str) -> String {
 
 #[derive(Props, Clone, PartialEq)]
 pub struct DiaryFeedProps {
-    on_select_book: EventHandler<i64>,
+    on_select_entry: EventHandler<DiaryEntry>,
 }
 
 #[component]
@@ -142,7 +142,6 @@ pub fn DiaryFeed(props: DiaryFeedProps) -> Element {
                         class: "space-y-3",
                         for entry in group_entries.iter() {
                             {
-                                let book_id = entry.book_id;
                                 let title = entry.book_title.clone();
                                 let author = entry.book_author.clone();
                                 let cover_url = entry.book_cover_url.clone();
@@ -150,13 +149,14 @@ pub fn DiaryFeed(props: DiaryFeedProps) -> Element {
                                 let rating = entry.rating;
                                 let body_preview = entry.body.as_deref().map(extract_plain_text);
                                 let first_char = title.chars().next().unwrap_or('?').to_uppercase().to_string();
+                                let entry_clone = (*entry).clone();
                                 let eid = entry.id;
 
                                 rsx! {
                                     button {
                                         key: "{eid}",
                                         r#type: "button",
-                                        onclick: move |_| props.on_select_book.call(book_id),
+                                        onclick: move |_| props.on_select_entry.call(entry_clone.clone()),
                                         class: "flex w-full gap-3 rounded-lg border border-gray-200 bg-white
                                             p-3 text-left transition hover:border-amber-300 hover:shadow-sm
                                             dark:border-gray-700 dark:bg-gray-900 dark:hover:border-amber-600",
