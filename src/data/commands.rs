@@ -748,6 +748,25 @@ fn row_to_diary_entry(row: &rusqlite::Row) -> rusqlite::Result<DiaryEntry> {
     })
 }
 
+fn sync_book_rating_if_latest(
+    conn: &rusqlite::Connection,
+    entry_id: i64,
+    book_id: i64,
+    rating: i32,
+) -> Result<(), String> {
+    let latest_id: i64 = conn
+        .query_row(
+            "SELECT id FROM diary_entries WHERE book_id = ?1 ORDER BY entry_date DESC, id DESC LIMIT 1",
+            [book_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if latest_id == entry_id {
+        set_rating_db(conn, book_id, rating)?;
+    }
+    Ok(())
+}
+
 pub fn create_diary_entry_db(
     conn: &rusqlite::Connection,
     book_id: i64,
@@ -778,6 +797,9 @@ pub fn create_diary_entry_db(
     )
     .map_err(|e| e.to_string())?;
     let id = conn.last_insert_rowid();
+    if let Some(r) = rating {
+        sync_book_rating_if_latest(conn, id, book_id, r)?;
+    }
     let mut stmt = conn
         .prepare(&format!("{} WHERE d.id = ?1", DIARY_SELECT))
         .map_err(|e| e.to_string())?;
@@ -814,6 +836,16 @@ pub fn update_diary_entry_db(
         rusqlite::params![body, rating, entry_date, id],
     )
     .map_err(|e| e.to_string())?;
+    if let Some(r) = rating {
+        let book_id: i64 = conn
+            .query_row(
+                "SELECT book_id FROM diary_entries WHERE id = ?1",
+                [id],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        sync_book_rating_if_latest(conn, id, book_id, r)?;
+    }
     Ok(())
 }
 
