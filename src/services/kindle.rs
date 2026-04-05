@@ -84,7 +84,7 @@ pub fn list_kindle_books(mount_path: &str) -> Vec<KindleBook> {
     };
 
     let mut books = Vec::new();
-    scan_dir(&docs_dir, &mut books, 0);
+    scan_dir(&docs_dir, &mut books, 0, mount);
     info!(count = books.len(), "Kindle books found");
     books
 }
@@ -204,7 +204,26 @@ struct MobiFields {
     cde_type: Option<String>,
 }
 
-fn scan_dir(dir: &Path, books: &mut Vec<KindleBook>, depth: u32) {
+fn read_system_thumbnail(mount_root: &Path, asin: &str, cde_type: &str) -> Option<String> {
+    let thumbs_dir = mount_root.join("system/thumbnails");
+    let variants = [
+        cde_type.to_string(),
+        "EBOK".to_string(),
+        "PDOC".to_string(),
+        "EBSP".to_string(),
+    ];
+    for variant in &variants {
+        let thumb_path = thumbs_dir.join(format!("thumbnail_{asin}_{variant}_portrait.jpg"));
+        if let Ok(data) = fs::read(&thumb_path) {
+            if !data.is_empty() {
+                return Some(base64::engine::general_purpose::STANDARD.encode(&data));
+            }
+        }
+    }
+    None
+}
+
+fn scan_dir(dir: &Path, books: &mut Vec<KindleBook>, depth: u32, mount_root: &Path) {
     if depth > 10 {
         return;
     }
@@ -226,7 +245,7 @@ fn scan_dir(dir: &Path, books: &mut Vec<KindleBook>, depth: u32) {
             if SKIP_DIRS.iter().any(|s| dir_name.ends_with(s)) {
                 continue;
             }
-            scan_dir(&path, books, depth + 1);
+            scan_dir(&path, books, depth + 1, mount_root);
             continue;
         }
 
@@ -261,43 +280,72 @@ fn scan_dir(dir: &Path, books: &mut Vec<KindleBook>, depth: u32) {
             continue;
         }
 
+        // KFX metadata from .sdr sidecar (highest priority)
+        let sdr_path = dir.join(format!("{stem}.sdr/assets/metadata.kfx"));
+        let kfx_meta = if sdr_path.exists() {
+            crate::services::kfx::read_kfx_metadata(&sdr_path)
+        } else {
+            None
+        };
+
         let mobi_meta = if MOBI_EXTENSIONS.contains(&ext.as_str()) {
             read_mobi_metadata(&path)
         } else {
             None
         };
 
-        let (
-            title,
-            author,
-            asin,
-            isbn,
-            publisher,
-            description,
-            published_date,
-            language,
-            cover_data,
-            cde_type,
-        ) = if let Some(meta) = mobi_meta {
-            let (fallback_title, fallback_author, fallback_asin) = parse_kindle_filename(&stem);
-            (
-                meta.title.unwrap_or(fallback_title),
-                meta.author.or(fallback_author),
-                meta.asin.or(fallback_asin),
-                meta.isbn,
-                meta.publisher,
-                meta.description,
-                meta.published_date,
-                meta.language,
-                meta.cover_data,
-                meta.cde_type,
-            )
-        } else {
-            let (title, author, asin) = parse_kindle_filename(&stem);
-            (
-                title, author, asin, None, None, None, None, None, None, None,
-            )
-        };
+        let (fallback_title, fallback_author, fallback_asin) = parse_kindle_filename(&stem);
+
+        // Priority: KFX > MOBI > filename
+        let title = kfx_meta
+            .as_ref()
+            .and_then(|k| k.title.clone())
+            .or_else(|| mobi_meta.as_ref().and_then(|m| m.title.clone()))
+            .unwrap_or(fallback_title);
+        let author = kfx_meta
+            .as_ref()
+            .and_then(|k| k.author.clone())
+            .or_else(|| mobi_meta.as_ref().and_then(|m| m.author.clone()))
+            .or(fallback_author);
+        let asin = kfx_meta
+            .as_ref()
+            .and_then(|k| k.asin.clone())
+            .or_else(|| mobi_meta.as_ref().and_then(|m| m.asin.clone()))
+            .or(fallback_asin);
+        let isbn = kfx_meta
+            .as_ref()
+            .and_then(|k| k.isbn.clone())
+            .or_else(|| mobi_meta.as_ref().and_then(|m| m.isbn.clone()));
+        let publisher = kfx_meta
+            .as_ref()
+            .and_then(|k| k.publisher.clone())
+            .or_else(|| mobi_meta.as_ref().and_then(|m| m.publisher.clone()));
+        let description = kfx_meta
+            .as_ref()
+            .and_then(|k| k.description.clone())
+            .or_else(|| mobi_meta.as_ref().and_then(|m| m.description.clone()));
+        let published_date = kfx_meta
+            .as_ref()
+            .and_then(|k| k.published_date.clone())
+            .or_else(|| mobi_meta.as_ref().and_then(|m| m.published_date.clone()));
+        let language = kfx_meta
+            .as_ref()
+            .and_then(|k| k.language.clone())
+            .or_else(|| mobi_meta.as_ref().and_then(|m| m.language.clone()));
+        let cde_type = kfx_meta
+            .as_ref()
+            .and_then(|k| k.cde_type.clone())
+            .or_else(|| mobi_meta.as_ref().and_then(|m| m.cde_type.clone()));
+
+        let cover_data = kfx_meta
+            .as_ref()
+            .and_then(|k| k.cover_data.clone())
+            .or_else(|| mobi_meta.as_ref().and_then(|m| m.cover_data.clone()))
+            .or_else(|| {
+                let asin_val = asin.as_deref()?;
+                let cde = cde_type.as_deref().unwrap_or("EBOK");
+                read_system_thumbnail(mount_root, asin_val, cde)
+            });
 
         books.push(KindleBook {
             filename,
