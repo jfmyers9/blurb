@@ -6,6 +6,7 @@ mod command_palette;
 mod diary_entry_form;
 mod diary_feed;
 mod editor_toolbar;
+pub mod enrichment_bar;
 mod kindle_sync;
 mod library_grid;
 mod library_list;

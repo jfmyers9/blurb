@@ -14,10 +14,12 @@ use super::book_detail::BookDetail;
 use super::command_palette::CommandPalette;
 use super::diary_entry_form::DiaryEntryForm;
 use super::diary_feed::DiaryFeed;
+use super::enrichment_bar::EnrichmentBar;
 use super::kindle_sync::KindleSync;
 use super::library_grid::LibraryGrid;
 use super::library_list::LibraryList;
 use super::status_filter_bar::StatusFilterBar;
+use crate::services::enrichment::EnrichmentState;
 
 #[derive(Clone, Copy, PartialEq)]
 enum AppView {
@@ -27,6 +29,7 @@ enum AppView {
 
 #[component]
 pub fn App() -> Element {
+    use_context_provider(EnrichmentState::new);
     let db = use_context::<DatabaseHandle>();
 
     let mut books: Signal<Vec<Book>> = use_signal(Vec::new);
@@ -289,6 +292,8 @@ pub fn App() -> Element {
                 }
             }
         }
+
+        EnrichmentBar {}
 
         // Book detail slide-out panel
         if let Some(bid) = *selected_book_id.read() {

@@ -177,3 +177,107 @@ fn ol_search_doc_to_book_metadata() {
     assert_eq!(meta.isbn.as_deref(), Some("9780141439563"));
     assert!(meta.description.is_none());
 }
+
+#[test]
+fn sanitize_strips_novel_subtitle() {
+    assert_eq!(sanitize_title("James: A Novel"), "James");
+}
+
+#[test]
+fn sanitize_strips_series_parens() {
+    assert_eq!(
+        sanitize_title("Consider Phlebas (A Culture Novel Book 1)"),
+        "Consider Phlebas"
+    );
+}
+
+#[test]
+fn sanitize_strips_publisher_parens() {
+    assert_eq!(
+        sanitize_title(
+            "Blood Meridian  Or the Evening Redness in the West (Vintage International)"
+        ),
+        "Blood Meridian Or the Evening Redness in the West"
+    );
+}
+
+#[test]
+fn sanitize_strips_shattered_sea_series() {
+    assert_eq!(
+        sanitize_title("Half a King (Shattered Sea Book 1)"),
+        "Half a King"
+    );
+}
+
+#[test]
+fn sanitize_strips_long_series_name() {
+    assert_eq!(
+        sanitize_title("The Rise of Theodore Roosevelt (Theodore Roosevelt Series Book 1)"),
+        "The Rise of Theodore Roosevelt"
+    );
+}
+
+#[test]
+fn sanitize_strips_edition_then_novel() {
+    assert_eq!(
+        sanitize_title("Cloud Atlas (20th Anniversary Edition)  A Novel"),
+        "Cloud Atlas"
+    );
+}
+
+#[test]
+fn sanitize_strips_rediscovered_classics() {
+    assert_eq!(
+        sanitize_title("Roadside Picnic (Rediscovered Classics)"),
+        "Roadside Picnic"
+    );
+}
+
+#[test]
+fn sanitize_preserves_short_title() {
+    assert_eq!(sanitize_title("V."), "V.");
+}
+
+#[test]
+fn validate_rejects_wrong_book() {
+    let result = BookMetadata {
+        title: Some("James Bond: Casino Royale".into()),
+        author: Some("Ian Fleming".into()),
+        ..Default::default()
+    };
+    assert!(!validate_match("James", Some("Percival Everett"), &result));
+}
+
+#[test]
+fn validate_accepts_correct_match() {
+    let result = BookMetadata {
+        title: Some("James: A Novel".into()),
+        author: Some("Percival Everett".into()),
+        ..Default::default()
+    };
+    assert!(validate_match("James", Some("Percival Everett"), &result));
+}
+
+#[test]
+fn validate_accepts_author_name_variant() {
+    let result = BookMetadata {
+        title: Some("Consider Phlebas".into()),
+        author: Some("Iain Banks".into()),
+        ..Default::default()
+    };
+    assert!(validate_match(
+        "Consider Phlebas",
+        Some("Iain M. Banks"),
+        &result
+    ));
+}
+
+#[test]
+fn validate_accepts_exact_short_title() {
+    let result = BookMetadata {
+        title: Some("V.".into()),
+        author: Some("Thomas Pynchon".into()),
+        ..Default::default()
+    };
+    assert!(validate_match("V.", Some("Thomas Pynchon"), &result));
+}
