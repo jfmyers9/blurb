@@ -1,0 +1,119 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build (dry run, e.g. 1.2.3)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  changelog:
+    runs-on: ubuntu-latest
+    outputs:
+      changelog: ${{ steps.cliff.outputs.content }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: cliff
+        uses: orhun/git-cliff-action@c93ef52f3d0ddcdcc9bd5447d98d458a11cd4f72 # v4.7.1
+        with:
+          args: --latest --strip header
+
+      - name: Validate changelog
+        run: |
+          if [[ -z "${{ steps.cliff.outputs.content }}" ]]; then
+            echo "::error::Changelog is empty"
+            exit 1
+          fi
+
+  check:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: [changelog, check]
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract and validate version
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "::error::Invalid version: $VERSION"
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Patch version
+        shell: bash
+        run: bash scripts/patch-version.sh "$VERSION"
+
+      - name: Install system dependencies (Ubuntu)
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev libxdo-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install dioxus-cli
+        run: cargo install dioxus-cli --locked
+
+      - name: Install jq (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        run: choco install jq -y
+
+      - name: Bundle and collect artifacts
+        shell: bash
+        run: |
+          mkdir -p dist
+          dx bundle --release --json-output --verbose | tail -1 \
+            | jq -r '.json | fromjson | .BundleOutput.bundles[]' \
+            | while read -r path; do
+                cp -r "$path" dist/
+              done
+          ls -la dist/
+
+      - uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && format('v{0}-dry-run', env.VERSION) || github.ref_name }}
+          name: ${{ github.event_name == 'workflow_dispatch' && format('Blurb v{0} (dry run)', env.VERSION) || format('Blurb {0}', github.ref_name) }}
+          body: ${{ needs.changelog.outputs.changelog }}
+          draft: true
+          prerelease: false
+          files: dist/*
