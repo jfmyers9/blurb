@@ -1,8 +1,10 @@
+use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
+
 use crate::data::models::{Book, DiaryEntry, Highlight, HighlightSearchResult, Shelf};
 use crate::services::kindle::KindleBook;
 use crate::services::metadata::BookMetadata;
-use std::fs;
-use std::path::Path;
 
 const BOOK_SELECT: &str = "SELECT b.id, b.title, b.author, b.isbn, b.asin, \
     b.cover_url, b.description, b.publisher, b.published_date, \
@@ -850,6 +852,37 @@ pub fn list_book_diary_entries_db(
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
     Ok(entries)
+}
+
+#[cfg(test)]
+pub fn get_setting_db(conn: &rusqlite::Connection, key: &str) -> Result<Option<String>, String> {
+    let mut stmt = conn
+        .prepare("SELECT value FROM settings WHERE key = ?1")
+        .map_err(|e| e.to_string())?;
+    let result = stmt.query_row([key], |row| row.get(0)).ok();
+    Ok(result)
+}
+
+pub fn set_setting_db(conn: &rusqlite::Connection, key: &str, value: &str) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?1, ?2) \
+         ON CONFLICT(key) DO UPDATE SET value = ?2",
+        rusqlite::params![key, value],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn get_all_settings_db(conn: &rusqlite::Connection) -> Result<HashMap<String, String>, String> {
+    let mut stmt = conn
+        .prepare("SELECT key, value FROM settings")
+        .map_err(|e| e.to_string())?;
+    let pairs = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<(String, String)>, _>>()
+        .map_err(|e| e.to_string())?;
+    Ok(pairs.into_iter().collect())
 }
 
 #[cfg(test)]

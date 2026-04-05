@@ -117,6 +117,18 @@ fn migrations() -> Vec<Migration> {
             )
             },
         },
+        Migration {
+            version: 4,
+            description: "add settings table",
+            up: |conn| {
+                conn.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS settings(
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );",
+                )
+            },
+        },
     ]
 }
 

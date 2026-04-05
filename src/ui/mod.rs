@@ -9,6 +9,7 @@ mod kindle_sync;
 mod library_grid;
 mod library_list;
 mod rating_stars;
+mod settings_view;
 mod shelf_picker;
 mod sort_dropdown;
 mod status_filter_bar;

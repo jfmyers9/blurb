@@ -22,6 +22,7 @@ fn migration_1_creates_all_tables() {
             "ratings",
             "reading_status",
             "reviews",
+            "settings",
             "shelves"
         ]
     );
@@ -39,7 +40,7 @@ fn run_migrations_preserves_existing_version() {
 fn fresh_db_reaches_latest_version_with_indexes() {
     let conn = Connection::open_in_memory().unwrap();
     run_migrations(&conn).unwrap();
-    assert_eq!(get_user_version(&conn).unwrap(), 3);
+    assert_eq!(get_user_version(&conn).unwrap(), 4);
 
     let mut stmt = conn
         .prepare(
@@ -80,7 +81,7 @@ fn incremental_upgrade_from_version_1_to_latest() {
     .unwrap();
 
     run_migrations(&conn).unwrap();
-    assert_eq!(get_user_version(&conn).unwrap(), 3);
+    assert_eq!(get_user_version(&conn).unwrap(), 4);
 
     let title: String = conn
         .query_row("SELECT title FROM books WHERE id = 1", [], |row| row.get(0))
@@ -166,7 +167,7 @@ fn run_migrations_is_idempotent() {
     let conn = Connection::open_in_memory().unwrap();
     run_migrations(&conn).unwrap();
     run_migrations(&conn).unwrap();
-    assert_eq!(get_user_version(&conn).unwrap(), 3);
+    assert_eq!(get_user_version(&conn).unwrap(), 4);
 }
 
 #[test]
