@@ -5,13 +5,14 @@ use dioxus::prelude::*;
 use tracing::error;
 
 use crate::data::commands::{list_all_shelf_book_ids_db, list_books_db, list_shelves_db};
-use crate::data::models::{Book, Shelf};
+use crate::data::models::{Book, DiaryEntry, Shelf};
 use crate::hooks::{use_library_filter, ViewMode};
 use crate::DatabaseHandle;
 
 use super::add_book_form::AddBookForm;
 use super::book_detail::BookDetail;
 use super::command_palette::CommandPalette;
+use super::diary_entry_form::DiaryEntryForm;
 use super::diary_feed::DiaryFeed;
 use super::kindle_sync::KindleSync;
 use super::library_grid::LibraryGrid;
@@ -33,6 +34,7 @@ pub fn App() -> Element {
     let mut shelf_book_ids: Signal<HashMap<i64, Vec<i64>>> = use_signal(HashMap::new);
 
     let mut selected_book_id: Signal<Option<i64>> = use_signal(|| None);
+    let mut selected_diary_entry: Signal<Option<DiaryEntry>> = use_signal(|| None);
     let mut show_add_form = use_signal(|| false);
     let mut show_kindle_sync = use_signal(|| false);
     let mut palette_open = use_signal(|| false);
@@ -279,7 +281,7 @@ pub fn App() -> Element {
                     },
                     AppView::Diary => rsx! {
                         DiaryFeed {
-                            on_select_book: move |id: i64| selected_book_id.set(Some(id)),
+                            on_select_entry: move |entry: DiaryEntry| selected_diary_entry.set(Some(entry)),
                         }
                     },
                 }
@@ -304,6 +306,19 @@ pub fn App() -> Element {
                         reload_data();
                     }
                 },
+            }
+        }
+
+        // Diary entry detail overlay
+        if let Some(ref entry) = *selected_diary_entry.read() {
+            DiaryEntryForm {
+                book_id: entry.book_id,
+                book_title: Some(entry.book_title.clone()),
+                entry: Some(entry.clone()),
+                on_save: move |_| {
+                    selected_diary_entry.set(None);
+                },
+                on_close: move |_| selected_diary_entry.set(None),
             }
         }
 

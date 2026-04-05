@@ -70,6 +70,7 @@ pub struct DiaryEntryFormProps {
 pub fn DiaryEntryForm(props: DiaryEntryFormProps) -> Element {
     let db = use_context::<DatabaseHandle>();
 
+    let starts_in_read = props.entry.is_some();
     let initial_date = props
         .entry
         .as_ref()
@@ -88,6 +89,7 @@ pub fn DiaryEntryForm(props: DiaryEntryFormProps) -> Element {
     let mut body = use_signal(|| initial_body);
     let mut entry_id: Signal<Option<i64>> = use_signal(|| initial_id);
     let mut save_status = use_signal(|| "idle");
+    let mut is_read_mode = use_signal(|| starts_in_read);
 
     let preview_html = render_markdown(&body.read());
 
@@ -160,134 +162,109 @@ pub fn DiaryEntryForm(props: DiaryEntryFormProps) -> Element {
             // Top bar
             div {
                 class: "flex items-center gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-700",
-                button {
-                    onclick: on_close_handler,
-                    class: "rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700
-                        dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200",
-                    aria_label: "Close",
-                    svg {
-                        class: "h-5 w-5",
-                        fill: "none",
-                        view_box: "0 0 24 24",
-                        stroke_width: "2",
-                        stroke: "currentColor",
-                        path {
-                            stroke_linecap: "round",
-                            stroke_linejoin: "round",
-                            d: "M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18",
+                if *is_read_mode.read() {
+                    button {
+                        onclick: move |_| props.on_close.call(()),
+                        class: "rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700
+                            dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200",
+                        aria_label: "Back",
+                        svg {
+                            class: "h-5 w-5",
+                            fill: "none",
+                            view_box: "0 0 24 24",
+                            stroke_width: "2",
+                            stroke: "currentColor",
+                            path {
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                d: "M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18",
+                            }
                         }
                     }
-                }
 
-                div {
-                    class: "flex min-w-0 flex-1 items-center justify-center gap-3",
-                    if let Some(ref title) = props.book_title {
-                        span {
-                            class: "truncate text-sm font-medium text-gray-700 dark:text-gray-300",
-                            "{title}"
-                        }
-                    }
-                    input {
-                        r#type: "date",
-                        value: "{entry_date}",
-                        oninput: move |e| entry_date.set(e.value()),
-                        class: "rounded-md border border-gray-300 bg-white px-2 py-1 text-sm
-                            text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100
-                            focus:ring-2 focus:ring-amber-500 focus:outline-none",
-                    }
-                    RatingStars {
-                        rating: *rating.read(),
-                        on_rate: move |score: i32| {
-                            let new_val = if Some(score) == *rating.read() { None } else { Some(score) };
-                            rating.set(new_val);
-                        },
-                        small: true,
-                    }
-                }
-
-                div {
-                    class: "w-20 text-right text-sm text-gray-400",
-                    match *save_status.read() {
-                        "saving" => rsx! { "Saving..." },
-                        "saved" => rsx! {
-                            span { class: "text-green-600 dark:text-green-400", "\u{2713} Saved" }
-                        },
-                        _ => rsx! {},
-                    }
-                }
-            }
-
-            // Markdown toolbar
-            div {
-                class: "flex items-center gap-0.5 border-b border-gray-200 px-4 py-2 dark:border-gray-700",
-                button {
-                    r#type: "button",
-                    title: "Bold",
-                    onclick: move |_| append_syntax(&mut body, "**", "**"),
-                    class: "rounded-md p-2 text-gray-600 transition-colors hover:bg-gray-100
-                        dark:text-gray-400 dark:hover:bg-gray-800",
-                    span { class: "text-sm font-bold", "B" }
-                }
-                button {
-                    r#type: "button",
-                    title: "Italic",
-                    onclick: move |_| append_syntax(&mut body, "*", "*"),
-                    class: "rounded-md p-2 text-gray-600 transition-colors hover:bg-gray-100
-                        dark:text-gray-400 dark:hover:bg-gray-800",
-                    span { class: "text-sm italic", "I" }
-                }
-                button {
-                    r#type: "button",
-                    title: "Heading",
-                    onclick: move |_| append_syntax(&mut body, "## ", ""),
-                    class: "rounded-md p-2 text-gray-600 transition-colors hover:bg-gray-100
-                        dark:text-gray-400 dark:hover:bg-gray-800",
-                    span { class: "text-sm font-medium", "H" }
-                }
-                button {
-                    r#type: "button",
-                    title: "List",
-                    onclick: move |_| append_syntax(&mut body, "- ", ""),
-                    class: "rounded-md p-2 text-gray-600 transition-colors hover:bg-gray-100
-                        dark:text-gray-400 dark:hover:bg-gray-800",
-                    span { class: "text-sm font-medium", "-" }
-                }
-                button {
-                    r#type: "button",
-                    title: "Quote",
-                    onclick: move |_| append_syntax(&mut body, "> ", ""),
-                    class: "rounded-md p-2 text-gray-600 transition-colors hover:bg-gray-100
-                        dark:text-gray-400 dark:hover:bg-gray-800",
-                    span { class: "text-sm font-medium", ">" }
-                }
-            }
-
-            // Editor and preview
-            div {
-                class: "flex flex-1 overflow-hidden",
-
-                // Markdown editor
-                div {
-                    class: "flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900",
                     div {
-                        class: "mx-auto max-w-3xl px-6 py-6",
-                        textarea {
-                            value: "{body}",
-                            oninput: move |e| body.set(e.value()),
-                            placeholder: "Write your thoughts in Markdown...",
-                            class: "min-h-[60vh] w-full resize-none rounded-xl bg-white px-10 py-12
-                                text-sm leading-relaxed text-gray-700 shadow-sm ring-1
-                                ring-gray-200/50 placeholder-gray-400 outline-none
-                                dark:bg-gray-800/80 dark:text-gray-300 dark:ring-gray-700/50
-                                dark:placeholder-gray-500",
+                        class: "flex min-w-0 flex-1 items-center justify-center gap-3",
+                        if let Some(ref title) = props.book_title {
+                            span {
+                                class: "truncate text-sm font-medium text-gray-700 dark:text-gray-300",
+                                "{title}"
+                            }
+                        }
+                        span {
+                            class: "text-sm text-gray-600 dark:text-gray-400",
+                            "{entry_date}"
+                        }
+                        RatingStars {
+                            rating: *rating.read(),
+                            on_rate: move |_: i32| {},
+                            small: true,
+                        }
+                    }
+
+                    div { class: "w-20" }
+                } else {
+                    button {
+                        onclick: on_close_handler,
+                        class: "rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700
+                            dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200",
+                        aria_label: "Close",
+                        svg {
+                            class: "h-5 w-5",
+                            fill: "none",
+                            view_box: "0 0 24 24",
+                            stroke_width: "2",
+                            stroke: "currentColor",
+                            path {
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                d: "M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18",
+                            }
+                        }
+                    }
+
+                    div {
+                        class: "flex min-w-0 flex-1 items-center justify-center gap-3",
+                        if let Some(ref title) = props.book_title {
+                            span {
+                                class: "truncate text-sm font-medium text-gray-700 dark:text-gray-300",
+                                "{title}"
+                            }
+                        }
+                        input {
+                            r#type: "date",
+                            value: "{entry_date}",
+                            oninput: move |e| entry_date.set(e.value()),
+                            class: "rounded-md border border-gray-300 bg-white px-2 py-1 text-sm
+                                text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100
+                                focus:ring-2 focus:ring-amber-500 focus:outline-none",
+                        }
+                        RatingStars {
+                            rating: *rating.read(),
+                            on_rate: move |score: i32| {
+                                let new_val = if Some(score) == *rating.read() { None } else { Some(score) };
+                                rating.set(new_val);
+                            },
+                            small: true,
+                        }
+                    }
+
+                    div {
+                        class: "w-20 text-right text-sm text-gray-400",
+                        match *save_status.read() {
+                            "saving" => rsx! { "Saving..." },
+                            "saved" => rsx! {
+                                span { class: "text-green-600 dark:text-green-400", "\u{2713} Saved" }
+                            },
+                            _ => rsx! {},
                         }
                     }
                 }
+            }
 
-                // Live preview
+            if *is_read_mode.read() {
+                // Full-width preview in read mode
                 div {
-                    class: "flex-1 overflow-y-auto border-l border-gray-200 bg-white
-                        dark:border-gray-700 dark:bg-gray-800/80",
+                    class: "flex-1 overflow-y-auto bg-white dark:bg-gray-800/80",
                     div {
                         class: "mx-auto max-w-3xl px-10 py-12",
                         div {
@@ -298,17 +275,119 @@ pub fn DiaryEntryForm(props: DiaryEntryFormProps) -> Element {
                         }
                     }
                 }
-            }
 
-            // Save button
-            div {
-                class: "border-t border-gray-200 px-6 py-3 dark:border-gray-700",
-                button {
-                    r#type: "button",
-                    onclick: save_click,
-                    class: "rounded-lg bg-amber-600 px-5 py-2 text-sm font-medium
-                        text-white transition hover:bg-amber-700 active:scale-95",
-                    "Save Entry"
+                div {
+                    class: "flex items-center gap-3 border-t border-gray-200 px-6 py-3 dark:border-gray-700",
+                    button {
+                        r#type: "button",
+                        onclick: move |_| is_read_mode.set(false),
+                        class: "rounded-lg bg-amber-600 px-5 py-2 text-sm font-medium
+                            text-white transition hover:bg-amber-700 active:scale-95",
+                        "Edit"
+                    }
+                    button {
+                        r#type: "button",
+                        onclick: move |_| props.on_close.call(()),
+                        class: "rounded-lg border border-gray-300 px-5 py-2 text-sm font-medium
+                            text-gray-700 transition hover:bg-gray-50 active:scale-95
+                            dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800",
+                        "Back"
+                    }
+                }
+            } else {
+                // Markdown toolbar
+                div {
+                    class: "flex items-center gap-0.5 border-b border-gray-200 px-4 py-2 dark:border-gray-700",
+                    button {
+                        r#type: "button",
+                        title: "Bold",
+                        onclick: move |_| append_syntax(&mut body, "**", "**"),
+                        class: "rounded-md p-2 text-gray-600 transition-colors hover:bg-gray-100
+                            dark:text-gray-400 dark:hover:bg-gray-800",
+                        span { class: "text-sm font-bold", "B" }
+                    }
+                    button {
+                        r#type: "button",
+                        title: "Italic",
+                        onclick: move |_| append_syntax(&mut body, "*", "*"),
+                        class: "rounded-md p-2 text-gray-600 transition-colors hover:bg-gray-100
+                            dark:text-gray-400 dark:hover:bg-gray-800",
+                        span { class: "text-sm italic", "I" }
+                    }
+                    button {
+                        r#type: "button",
+                        title: "Heading",
+                        onclick: move |_| append_syntax(&mut body, "## ", ""),
+                        class: "rounded-md p-2 text-gray-600 transition-colors hover:bg-gray-100
+                            dark:text-gray-400 dark:hover:bg-gray-800",
+                        span { class: "text-sm font-medium", "H" }
+                    }
+                    button {
+                        r#type: "button",
+                        title: "List",
+                        onclick: move |_| append_syntax(&mut body, "- ", ""),
+                        class: "rounded-md p-2 text-gray-600 transition-colors hover:bg-gray-100
+                            dark:text-gray-400 dark:hover:bg-gray-800",
+                        span { class: "text-sm font-medium", "-" }
+                    }
+                    button {
+                        r#type: "button",
+                        title: "Quote",
+                        onclick: move |_| append_syntax(&mut body, "> ", ""),
+                        class: "rounded-md p-2 text-gray-600 transition-colors hover:bg-gray-100
+                            dark:text-gray-400 dark:hover:bg-gray-800",
+                        span { class: "text-sm font-medium", ">" }
+                    }
+                }
+
+                // Editor and preview
+                div {
+                    class: "flex flex-1 overflow-hidden",
+
+                    // Markdown editor
+                    div {
+                        class: "flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900",
+                        div {
+                            class: "mx-auto max-w-3xl px-6 py-6",
+                            textarea {
+                                value: "{body}",
+                                oninput: move |e| body.set(e.value()),
+                                placeholder: "Write your thoughts in Markdown...",
+                                class: "min-h-[60vh] w-full resize-none rounded-xl bg-white px-10 py-12
+                                    text-sm leading-relaxed text-gray-700 shadow-sm ring-1
+                                    ring-gray-200/50 placeholder-gray-400 outline-none
+                                    dark:bg-gray-800/80 dark:text-gray-300 dark:ring-gray-700/50
+                                    dark:placeholder-gray-500",
+                            }
+                        }
+                    }
+
+                    // Live preview
+                    div {
+                        class: "flex-1 overflow-y-auto border-l border-gray-200 bg-white
+                            dark:border-gray-700 dark:bg-gray-800/80",
+                        div {
+                            class: "mx-auto max-w-3xl px-10 py-12",
+                            div {
+                                class: "prose dark:prose-invert max-w-none text-sm
+                                    prose-headings:text-gray-800 dark:prose-headings:text-gray-200
+                                    prose-p:text-gray-700 dark:prose-p:text-gray-300",
+                                dangerous_inner_html: "{preview_html}",
+                            }
+                        }
+                    }
+                }
+
+                // Save button
+                div {
+                    class: "border-t border-gray-200 px-6 py-3 dark:border-gray-700",
+                    button {
+                        r#type: "button",
+                        onclick: save_click,
+                        class: "rounded-lg bg-amber-600 px-5 py-2 text-sm font-medium
+                            text-white transition hover:bg-amber-700 active:scale-95",
+                        "Save Entry"
+                    }
                 }
             }
         }
