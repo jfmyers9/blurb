@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use dioxus::prelude::*;
 
+use tracing::error;
+
 use crate::data::commands::{list_all_shelf_book_ids_db, list_books_db, list_shelves_db};
 use crate::data::models::{Book, Shelf};
 use crate::hooks::{use_library_filter, ViewMode};
@@ -42,18 +44,23 @@ pub fn App() -> Element {
             let db = db.clone();
             spawn(async move {
                 let conn = db.conn.lock().unwrap();
-                if let Ok(b) = list_books_db(&conn) {
-                    books.set(b);
+                match list_books_db(&conn) {
+                    Ok(b) => books.set(b),
+                    Err(e) => error!("failed to load books: {e}"),
                 }
-                if let Ok(s) = list_shelves_db(&conn) {
-                    shelves.set(s);
+                match list_shelves_db(&conn) {
+                    Ok(s) => shelves.set(s),
+                    Err(e) => error!("failed to load shelves: {e}"),
                 }
-                if let Ok(pairs) = list_all_shelf_book_ids_db(&conn) {
-                    let mut map: HashMap<i64, Vec<i64>> = HashMap::new();
-                    for (shelf_id, book_id) in pairs {
-                        map.entry(shelf_id).or_default().push(book_id);
+                match list_all_shelf_book_ids_db(&conn) {
+                    Ok(pairs) => {
+                        let mut map: HashMap<i64, Vec<i64>> = HashMap::new();
+                        for (shelf_id, book_id) in pairs {
+                            map.entry(shelf_id).or_default().push(book_id);
+                        }
+                        shelf_book_ids.set(map);
                     }
-                    shelf_book_ids.set(map);
+                    Err(e) => error!("failed to load shelf-book mappings: {e}"),
                 }
             });
         }

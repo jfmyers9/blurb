@@ -3,6 +3,7 @@ use mobi::headers::ExthRecord;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
+use tracing::info;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KindleBook {
@@ -42,10 +43,12 @@ pub fn detect_kindle() -> Option<String> {
         let has_system = has_subdir_case_insensitive(&mount, "system");
 
         if has_documents && has_system {
+            info!(mount_point = %mount.display(), "Kindle detected");
             return mount.to_str().map(|s| s.to_string());
         }
     }
 
+    tracing::debug!("no Kindle detected");
     None
 }
 
@@ -82,6 +85,7 @@ pub fn list_kindle_books(mount_path: &str) -> Vec<KindleBook> {
 
     let mut books = Vec::new();
     scan_dir(&docs_dir, &mut books, 0);
+    info!(count = books.len(), "Kindle books found");
     books
 }
 

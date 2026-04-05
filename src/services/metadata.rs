@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 use std::time::Duration;
+use tracing::instrument;
 
 static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     reqwest::Client::builder()
@@ -26,6 +27,7 @@ fn sanitize_isbn(isbn: &str) -> String {
     isbn.chars().filter(|c| c.is_ascii_alphanumeric()).collect()
 }
 
+#[instrument(skip_all, fields(isbn = %isbn), err(level = tracing::Level::WARN))]
 pub async fn lookup(isbn: &str) -> Result<BookMetadata, String> {
     let isbn = sanitize_isbn(isbn);
     if isbn.is_empty() {
@@ -179,6 +181,7 @@ fn prefer_isbn13(isbns: Option<Vec<String>>) -> Option<String> {
         .or_else(|| isbns.into_iter().next())
 }
 
+#[instrument(skip_all, err(level = tracing::Level::WARN))]
 pub async fn search_covers(query: &str) -> Result<Vec<BookMetadata>, String> {
     let client = HTTP_CLIENT.clone();
     let url = format!(
@@ -219,6 +222,7 @@ pub async fn search_covers(query: &str) -> Result<Vec<BookMetadata>, String> {
     Ok(results)
 }
 
+#[instrument(skip_all, err(level = tracing::Level::WARN))]
 pub async fn search_by_title(title: &str, author: Option<&str>) -> Result<BookMetadata, String> {
     if let Ok(meta) = search_by_title_open_library(title, author).await {
         if meta.title.is_some() {

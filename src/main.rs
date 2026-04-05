@@ -1,12 +1,12 @@
 mod data;
 mod hooks;
+mod logging;
 mod services;
 mod ui;
 
 use std::sync::{Arc, Mutex};
 
 use data::db;
-
 use ui::App;
 
 #[derive(Clone)]
@@ -15,7 +15,21 @@ pub struct DatabaseHandle {
 }
 
 fn main() {
+    let _log_guard = logging::init();
+
+    let build_mode = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    };
+    tracing::info!(
+        version = env!("CARGO_PKG_VERSION"),
+        build_mode,
+        "blurb starting"
+    );
+
     let conn = db::init_db().expect("failed to initialize database");
+
     let db_handle = DatabaseHandle {
         conn: Arc::new(Mutex::new(conn)),
     };

@@ -3,6 +3,7 @@ use crate::services::kindle::KindleBook;
 use crate::services::metadata::BookMetadata;
 use std::fs;
 use std::path::Path;
+use tracing::{info, warn};
 
 const BOOK_SELECT: &str = "SELECT b.id, b.title, b.author, b.isbn, b.asin, \
     b.cover_url, b.description, b.publisher, b.published_date, \
@@ -63,7 +64,9 @@ pub fn add_book_db(
         ],
     )
     .map_err(|e| e.to_string())?;
-    Ok(conn.last_insert_rowid())
+    let id = conn.last_insert_rowid();
+    info!(id, title, "book added");
+    Ok(id)
 }
 
 pub fn list_books_db(conn: &rusqlite::Connection) -> Result<Vec<Book>, String> {
@@ -243,6 +246,7 @@ pub fn update_reading_dates_db(
     Ok(())
 }
 
+#[tracing::instrument(skip_all, fields(book_count = books.len()), err)]
 pub fn import_kindle_books_db(
     conn: &mut rusqlite::Connection,
     books: &[KindleBook],
@@ -296,7 +300,7 @@ pub fn import_kindle_books_db(
                     match cover_path.to_str() {
                         Some(cover_url) => {
                             if let Err(e) = fs::write(&cover_path, &bytes) {
-                                eprintln!("warn: failed to write cover for '{}': {e}", book.title);
+                                warn!(title = %book.title, "failed to write cover: {e}");
                             } else {
                                 tx.execute(
                                     "UPDATE books SET cover_url = ?1 WHERE id = ?2",
@@ -306,12 +310,12 @@ pub fn import_kindle_books_db(
                             }
                         }
                         None => {
-                            eprintln!("warn: non-UTF-8 cover path for '{}'", book.title);
+                            warn!(title = %book.title, "non-UTF-8 cover path");
                         }
                     }
                 }
                 Err(e) => {
-                    eprintln!("warn: failed to decode cover for '{}': {e}", book.title);
+                    warn!(title = %book.title, "failed to decode cover: {e}");
                 }
             }
         }
@@ -357,6 +361,7 @@ pub fn upload_cover_db(
 
 pub fn delete_book_with_covers_db(conn: &rusqlite::Connection, id: i64) -> Result<(), String> {
     delete_book_db(conn, id)?;
+    info!(book_id = id, "book deleted");
 
     if let Ok(covers_dir) = crate::data::db::covers_dir() {
         if covers_dir.exists() {
