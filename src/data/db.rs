@@ -1,5 +1,6 @@
 use rusqlite::Connection;
 use std::fs;
+use tracing::info;
 
 pub fn init_db() -> Result<Connection, String> {
     let app_dir = dirs::data_dir()
@@ -8,10 +9,11 @@ pub fn init_db() -> Result<Connection, String> {
     fs::create_dir_all(&app_dir).map_err(|e| e.to_string())?;
 
     let db_path = app_dir.join("books.db");
-    let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
+    let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
 
     crate::data::migrations::run_migrations(&conn)?;
 
+    info!(path = %db_path.display(), "database initialized");
     Ok(conn)
 }
 

@@ -54,7 +54,8 @@ dx build --release
 
 ```
 src/
-  main.rs                       # Entry point: init DB, launch Dioxus desktop window
+  main.rs                       # Entry point: init logging, init DB, launch Dioxus desktop window
+  logging.rs                     # Tracing subscriber setup (file + stdout, daily rotation)
   data/
     commands.rs                  # SQLite query functions (CRUD for books, shelves, highlights, diary)
     db.rs                        # Database initialization
@@ -87,6 +88,35 @@ assets/
   tailwind.css                   # Compiled Tailwind styles
   icons/                         # App icons
 ```
+
+## Logging
+
+Blurb writes structured logs to a daily rolling file:
+
+| OS | Log Location |
+|----|-------------|
+| macOS | `~/Library/Logs/com.blurb.app/blurb.log.YYYY-MM-DD` |
+
+**Viewing logs:**
+
+```sh
+# Tail the current log file
+tail -f ~/Library/Logs/com.blurb.app/blurb.log.$(date +%Y-%m-%d)
+
+# Or open in Console.app
+open -a Console ~/Library/Logs/com.blurb.app/
+```
+
+**Changing log level:**
+
+Set the `RUST_LOG` environment variable before launching:
+
+```sh
+RUST_LOG=debug dx serve    # verbose output for development
+RUST_LOG=trace dx serve    # maximum detail
+```
+
+Default levels: `info` in release builds, `debug` in development.
 
 ## Data Storage
 

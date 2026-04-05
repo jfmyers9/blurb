@@ -1,4 +1,5 @@
 use dioxus::prelude::*;
+use tracing::error;
 
 use crate::data::commands::{
     add_book_to_shelf_db, create_shelf_db, delete_book_with_covers_db, enrich_book_db, get_book_db,
@@ -56,23 +57,31 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
             let db = db.clone();
             spawn(async move {
                 let conn = db.conn.lock().unwrap();
-                if let Ok(b) = get_book_db(&conn, book_id) {
-                    let q = format!("{} {}", b.title, b.author.as_deref().unwrap_or(""))
-                        .trim()
-                        .to_string();
-                    title.set(b.title.clone());
-                    author.set(b.author.clone().unwrap_or_default());
-                    search_query.set(q);
-                    book.set(Some(b));
+                match get_book_db(&conn, book_id) {
+                    Ok(b) => {
+                        let q = format!("{} {}", b.title, b.author.as_deref().unwrap_or(""))
+                            .trim()
+                            .to_string();
+                        title.set(b.title.clone());
+                        author.set(b.author.clone().unwrap_or_default());
+                        search_query.set(q);
+                        book.set(Some(b));
+                    }
+                    Err(e) => error!("failed to load book {book_id}: {e}"),
                 }
-                if let Ok(h) = list_highlights_db(&conn, book_id) {
-                    highlights.set(h);
+                match list_highlights_db(&conn, book_id) {
+                    Ok(h) => highlights.set(h),
+                    Err(e) => error!("failed to load highlights for book {book_id}: {e}"),
                 }
-                if let Ok(shelves) = list_book_shelves_db(&conn, book_id) {
-                    book_shelf_ids.set(shelves.iter().map(|s| s.id).collect());
+                match list_book_shelves_db(&conn, book_id) {
+                    Ok(shelves) => {
+                        book_shelf_ids.set(shelves.iter().map(|s| s.id).collect());
+                    }
+                    Err(e) => error!("failed to load shelves for book {book_id}: {e}"),
                 }
-                if let Ok(entries) = list_book_diary_entries_db(&conn, book_id) {
-                    diary_entries.set(entries);
+                match list_book_diary_entries_db(&conn, book_id) {
+                    Ok(entries) => diary_entries.set(entries),
+                    Err(e) => error!("failed to load diary entries for book {book_id}: {e}"),
                 }
             });
         });
@@ -85,10 +94,13 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
             let db = db.clone();
             spawn(async move {
                 let conn = db.conn.lock().unwrap();
-                if let Ok(b) = get_book_db(&conn, book_id) {
-                    title.set(b.title.clone());
-                    author.set(b.author.clone().unwrap_or_default());
-                    book.set(Some(b));
+                match get_book_db(&conn, book_id) {
+                    Ok(b) => {
+                        title.set(b.title.clone());
+                        author.set(b.author.clone().unwrap_or_default());
+                        book.set(Some(b));
+                    }
+                    Err(e) => error!("failed to refresh book {book_id}: {e}"),
                 }
                 drop(conn);
                 on_changed.call(());
@@ -209,7 +221,9 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                                                     if let Some(file) = file {
                                                         let path = file.path().to_string_lossy().to_string();
                                                         let conn = db.conn.lock().unwrap();
-                                                        let _ = upload_cover_db(&conn, book_id, &path);
+                                                        if let Err(e) = upload_cover_db(&conn, book_id, &path) {
+                                                            error!("failed to upload cover for book {book_id}: {e}");
+                                                        }
                                                         drop(conn);
                                                         cover_mode.set(None);
                                                         refresh_book();
@@ -254,14 +268,16 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                                             let a = author.read().clone();
                                             spawn(async move {
                                                 let conn = db.conn.lock().unwrap();
-                                                let _ = update_book_db(
+                                                if let Err(e) = update_book_db(
                                                     &conn, book_id, &t,
                                                     if a.is_empty() { None } else { Some(a.as_str()) },
                                                     bk.isbn.as_deref(), bk.asin.as_deref(),
                                                     Some(url.as_str()),
                                                     bk.description.as_deref(), bk.publisher.as_deref(),
                                                     bk.published_date.as_deref(), bk.page_count,
-                                                );
+                                                ) {
+                                                    error!("failed to update cover URL for book {book_id}: {e}");
+                                                }
                                                 drop(conn);
                                                 cover_mode.set(None);
                                                 paste_url.set(String::new());
@@ -290,14 +306,16 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                                             let a = author.read().clone();
                                             spawn(async move {
                                                 let conn = db.conn.lock().unwrap();
-                                                let _ = update_book_db(
+                                                if let Err(e) = update_book_db(
                                                     &conn, book_id, &t,
                                                     if a.is_empty() { None } else { Some(a.as_str()) },
                                                     bk.isbn.as_deref(), bk.asin.as_deref(),
                                                     Some(url.as_str()),
                                                     bk.description.as_deref(), bk.publisher.as_deref(),
                                                     bk.published_date.as_deref(), bk.page_count,
-                                                );
+                                                ) {
+                                                    error!("failed to update cover URL for book {book_id}: {e}");
+                                                }
                                                 drop(conn);
                                                 cover_mode.set(None);
                                                 paste_url.set(String::new());
@@ -347,7 +365,10 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                                                 spawn(async move {
                                                     match metadata::search_covers(&query).await {
                                                         Ok(results) => search_results.set(results),
-                                                        Err(_) => search_results.set(vec![]),
+                                                        Err(e) => {
+                                                            error!("failed to search covers: {e}");
+                                                            search_results.set(vec![]);
+                                                        }
                                                     }
                                                     searching.set(false);
                                                 });
@@ -366,7 +387,10 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                                             spawn(async move {
                                                 match metadata::search_covers(&query).await {
                                                     Ok(results) => search_results.set(results),
-                                                    Err(_) => search_results.set(vec![]),
+                                                    Err(e) => {
+                                                        error!("failed to search covers: {e}");
+                                                        search_results.set(vec![]);
+                                                    }
                                                 }
                                                 searching.set(false);
                                             });
@@ -420,14 +444,16 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                                                             let a = author.read().clone();
                                                             spawn(async move {
                                                                 let conn = db.conn.lock().unwrap();
-                                                                let _ = update_book_db(
+                                                                if let Err(e) = update_book_db(
                                                                     &conn, book_id, &t,
                                                                     if a.is_empty() { None } else { Some(a.as_str()) },
                                                                     bk.isbn.as_deref(), bk.asin.as_deref(),
                                                                     Some(url.as_str()),
                                                                     bk.description.as_deref(), bk.publisher.as_deref(),
                                                                     bk.published_date.as_deref(), bk.page_count,
-                                                                );
+                                                                ) {
+                                                                    error!("failed to update cover from search for book {book_id}: {e}");
+                                                                }
                                                                 drop(conn);
                                                                 cover_mode.set(None);
                                                                 search_results.set(vec![]);
@@ -493,10 +519,15 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                                             &bk.title,
                                             bk.author.as_deref(),
                                         ).await;
-                                        if let Ok(meta) = meta {
-                                            let conn = db.conn.lock().unwrap();
-                                            let _ = enrich_book_db(&conn, book_id, &meta);
-                                            drop(conn);
+                                        match meta {
+                                            Ok(meta) => {
+                                                let conn = db.conn.lock().unwrap();
+                                                if let Err(e) = enrich_book_db(&conn, book_id, &meta) {
+                                                    error!("failed to enrich book {book_id}: {e}");
+                                                }
+                                                drop(conn);
+                                            }
+                                            Err(e) => error!("failed to fetch metadata for book {book_id}: {e}"),
                                         }
                                         enriching.set(false);
                                         refresh_book();
@@ -535,14 +566,16 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                                     let bk = bk.clone();
                                     spawn(async move {
                                         let conn = db.conn.lock().unwrap();
-                                        let _ = update_book_db(
+                                        if let Err(e) = update_book_db(
                                             &conn, book_id, &t,
                                             if a.is_empty() { None } else { Some(a.as_str()) },
                                             bk.isbn.as_deref(), bk.asin.as_deref(),
                                             bk.cover_url.as_deref(), bk.description.as_deref(),
                                             bk.publisher.as_deref(), bk.published_date.as_deref(),
                                             bk.page_count,
-                                        );
+                                        ) {
+                                            error!("failed to update title for book {book_id}: {e}");
+                                        }
                                         drop(conn);
                                         refresh_book();
                                     });
@@ -581,14 +614,16 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                                     let bk = bk.clone();
                                     spawn(async move {
                                         let conn = db.conn.lock().unwrap();
-                                        let _ = update_book_db(
+                                        if let Err(e) = update_book_db(
                                             &conn, book_id, &t,
                                             if a.trim().is_empty() { None } else { Some(a.trim()) },
                                             bk.isbn.as_deref(), bk.asin.as_deref(),
                                             bk.cover_url.as_deref(), bk.description.as_deref(),
                                             bk.publisher.as_deref(), bk.published_date.as_deref(),
                                             bk.page_count,
-                                        );
+                                        ) {
+                                            error!("failed to update author for book {book_id}: {e}");
+                                        }
                                         drop(conn);
                                         refresh_book();
                                     });
@@ -619,7 +654,9 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                                 let refresh_book = refresh_book.clone();
                                 spawn(async move {
                                     let conn = db.conn.lock().unwrap();
-                                    let _ = set_rating_db(&conn, book_id, score);
+                                    if let Err(e) = set_rating_db(&conn, book_id, score) {
+                                        error!("failed to set rating for book {book_id}: {e}");
+                                    }
                                     drop(conn);
                                     refresh_book();
                                 });
@@ -645,12 +682,14 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                                 spawn(async move {
                                     let conn = db.conn.lock().unwrap();
                                     if status.is_empty() {
-                                        let _ = conn.execute(
+                                        if let Err(e) = conn.execute(
                                             "DELETE FROM reading_status WHERE book_id = ?1",
                                             [book_id],
-                                        );
-                                    } else {
-                                        let _ = set_reading_status_db(&conn, book_id, &status, None, None);
+                                        ) {
+                                            error!("failed to clear reading status for book {book_id}: {e}");
+                                        }
+                                    } else if let Err(e) = set_reading_status_db(&conn, book_id, &status, None, None) {
+                                        error!("failed to set reading status for book {book_id}: {e}");
                                     }
                                     drop(conn);
                                     refresh_book();
@@ -685,11 +724,13 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                                         let refresh_book = refresh_book.clone();
                                         spawn(async move {
                                             let conn = db.conn.lock().unwrap();
-                                            let _ = update_reading_dates_db(
+                                            if let Err(e) = update_reading_dates_db(
                                                 &conn, book_id,
                                                 started.as_deref(),
                                                 finished.as_deref(),
-                                            );
+                                            ) {
+                                                error!("failed to update reading dates for book {book_id}: {e}");
+                                            }
                                             drop(conn);
                                             refresh_book();
                                         });
@@ -721,11 +762,13 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                                         let refresh_book = refresh_book.clone();
                                         spawn(async move {
                                             let conn = db.conn.lock().unwrap();
-                                            let _ = update_reading_dates_db(
+                                            if let Err(e) = update_reading_dates_db(
                                                 &conn, book_id,
                                                 started.as_deref(),
                                                 finished.as_deref(),
-                                            );
+                                            ) {
+                                                error!("failed to update reading dates for book {book_id}: {e}");
+                                            }
                                             drop(conn);
                                             refresh_book();
                                         });
@@ -755,9 +798,12 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                                 let db = db.clone();
                                 spawn(async move {
                                     let conn = db.conn.lock().unwrap();
-                                    let _ = add_book_to_shelf_db(&conn, book_id, shelf_id);
-                                    if let Ok(shelves) = list_book_shelves_db(&conn, book_id) {
-                                        book_shelf_ids.set(shelves.iter().map(|s| s.id).collect());
+                                    if let Err(e) = add_book_to_shelf_db(&conn, book_id, shelf_id) {
+                                        error!("failed to add book {book_id} to shelf {shelf_id}: {e}");
+                                    }
+                                    match list_book_shelves_db(&conn, book_id) {
+                                        Ok(shelves) => book_shelf_ids.set(shelves.iter().map(|s| s.id).collect()),
+                                        Err(e) => error!("failed to reload shelves for book {book_id}: {e}"),
                                     }
                                     drop(conn);
                                     on_changed.call(());
@@ -771,9 +817,12 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                                 let db = db.clone();
                                 spawn(async move {
                                     let conn = db.conn.lock().unwrap();
-                                    let _ = remove_book_from_shelf_db(&conn, book_id, shelf_id);
-                                    if let Ok(shelves) = list_book_shelves_db(&conn, book_id) {
-                                        book_shelf_ids.set(shelves.iter().map(|s| s.id).collect());
+                                    if let Err(e) = remove_book_from_shelf_db(&conn, book_id, shelf_id) {
+                                        error!("failed to remove book {book_id} from shelf {shelf_id}: {e}");
+                                    }
+                                    match list_book_shelves_db(&conn, book_id) {
+                                        Ok(shelves) => book_shelf_ids.set(shelves.iter().map(|s| s.id).collect()),
+                                        Err(e) => error!("failed to reload shelves for book {book_id}: {e}"),
                                     }
                                     drop(conn);
                                     on_changed.call(());
@@ -787,11 +836,17 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                                 let db = db.clone();
                                 spawn(async move {
                                     let conn = db.conn.lock().unwrap();
-                                    if let Ok(shelf_id) = create_shelf_db(&conn, &name) {
-                                        let _ = add_book_to_shelf_db(&conn, book_id, shelf_id);
-                                        if let Ok(shelves) = list_book_shelves_db(&conn, book_id) {
-                                            book_shelf_ids.set(shelves.iter().map(|s| s.id).collect());
+                                    match create_shelf_db(&conn, &name) {
+                                        Ok(shelf_id) => {
+                                            if let Err(e) = add_book_to_shelf_db(&conn, book_id, shelf_id) {
+                                                error!("failed to add book {book_id} to new shelf {shelf_id}: {e}");
+                                            }
+                                            match list_book_shelves_db(&conn, book_id) {
+                                                Ok(shelves) => book_shelf_ids.set(shelves.iter().map(|s| s.id).collect()),
+                                                Err(e) => error!("failed to reload shelves for book {book_id}: {e}"),
+                                            }
                                         }
+                                        Err(e) => error!("failed to create shelf '{name}': {e}"),
                                     }
                                     drop(conn);
                                     on_changed.call(());
@@ -993,7 +1048,9 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                                 let db = db.clone();
                                 spawn(async move {
                                     let conn = db.conn.lock().unwrap();
-                                    let _ = delete_book_with_covers_db(&conn, book_id);
+                                    if let Err(e) = delete_book_with_covers_db(&conn, book_id) {
+                                        error!("failed to delete book {book_id}: {e}");
+                                    }
                                     drop(conn);
                                     on_deleted.call(book_id);
                                     on_close.call(());
@@ -1023,8 +1080,9 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                         let db = db.clone();
                         spawn(async move {
                             let conn = db.conn.lock().unwrap();
-                            if let Ok(entries) = list_book_diary_entries_db(&conn, book_id) {
-                                diary_entries.set(entries);
+                            match list_book_diary_entries_db(&conn, book_id) {
+                                Ok(entries) => diary_entries.set(entries),
+                                Err(e) => error!("failed to reload diary entries for book {book_id}: {e}"),
                             }
                         });
                     }
