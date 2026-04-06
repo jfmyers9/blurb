@@ -5,7 +5,7 @@ use crate::data::models::DiaryEntry;
 use crate::DatabaseHandle;
 
 use super::rating_stars::RatingStars;
-use super::tiptap_editor::TipTapEditor;
+use super::rich_text_editor::RichTextEditor;
 
 fn today_string() -> String {
     let now = std::time::SystemTime::now()
@@ -249,7 +249,7 @@ pub fn DiaryEntryForm(props: DiaryEntryFormProps) -> Element {
             if *is_read_mode.read() {
                 div {
                     class: "flex-1 overflow-y-auto",
-                    TipTapEditor {
+                    RichTextEditor {
                         content: body.read().clone(),
                         on_change: move |_: String| {},
                         editable: false,
@@ -277,7 +277,7 @@ pub fn DiaryEntryForm(props: DiaryEntryFormProps) -> Element {
             } else {
                 div {
                     class: "flex-1 overflow-y-auto",
-                    TipTapEditor {
+                    RichTextEditor {
                         content: body.read().clone(),
                         on_change: move |md: String| body.set(md),
                         editable: true,

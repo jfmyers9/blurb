@@ -1,0 +1,12 @@
+[package]
+name = "richtext-render"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+richtext-core = { path = "../richtext-core" }
+parley = "0.8.0"
+swash = "0.2.7"
+tiny-skia = "0.12.0"
+winit = "0.31.0-beta.2"
+softbuffer = "0.4.8"

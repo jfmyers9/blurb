@@ -1,0 +1,13 @@
+[package]
+name = "richtext-core"
+version = "0.1.0"
+edition = "2021"
+description = "ProseMirror-style document model for rich text editing"
+
+[dependencies]
+ropey = "1"
+pulldown-cmark = "0.13"
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+proptest = "1"
