@@ -36,6 +36,7 @@ struct EditorApp {
     win: Option<WinState>,
     modifiers: ModifiersState,
     needs_layout: bool,
+    scale_factor: f32,
 }
 
 struct WinState {
@@ -45,11 +46,12 @@ struct WinState {
 
 impl EditorApp {
     fn relayout(&mut self, width: f32) {
-        self.blocks = layout::layout_document(
+        self.blocks = layout::layout_document_scaled(
             &self.editor_state.doc,
             &mut self.font_cx,
             &mut self.layout_cx,
             width,
+            self.scale_factor,
         );
         self.needs_layout = false;
     }
@@ -68,8 +70,10 @@ impl ApplicationHandler for EditorApp {
         let context = softbuffer::Context::new(window.clone()).expect("context");
         let surface = Surface::new(&context, window.clone()).expect("surface");
 
+        self.scale_factor = window.scale_factor() as f32;
         let size = window.surface_size();
-        self.relayout(size.width.max(100) as f32 - 20.0);
+        let logical_width = size.width.max(100) as f32 / self.scale_factor;
+        self.relayout(logical_width - 20.0);
 
         self.win = Some(WinState { window, surface });
     }
@@ -84,7 +88,8 @@ impl ApplicationHandler for EditorApp {
             WindowEvent::CloseRequested => event_loop.exit(),
 
             WindowEvent::SurfaceResized(size) => {
-                self.relayout(size.width.max(100) as f32 - 20.0);
+                let logical_width = size.width.max(100) as f32 / self.scale_factor;
+                self.relayout(logical_width - 20.0);
                 if let Some(ws) = self.win.as_ref() {
                     ws.window.request_redraw();
                 }
@@ -103,7 +108,8 @@ impl ApplicationHandler for EditorApp {
                     .expect("resize");
 
                 if self.needs_layout {
-                    self.relayout(w as f32 - 20.0);
+                    let logical_width = w as f32 / self.scale_factor;
+                    self.relayout(logical_width - 20.0);
                 }
 
                 let mut pixmap = Pixmap::new(w, h).expect("pixmap");
@@ -216,8 +222,8 @@ impl ApplicationHandler for EditorApp {
                 position,
                 ..
             } => {
-                let x = position.x as f32;
-                let y = position.y as f32;
+                let x = position.x as f32 * self.scale_factor;
+                let y = position.y as f32 * self.scale_factor;
                 let pos = layout::hit_test(&self.blocks, x, y);
                 self.mouse.pressed = true;
                 self.mouse.drag_anchor = Some(pos);
@@ -241,8 +247,8 @@ impl ApplicationHandler for EditorApp {
             }
 
             WindowEvent::PointerMoved { position, .. } => {
-                let x = position.x as f32;
-                let y = position.y as f32;
+                let x = position.x as f32 * self.scale_factor;
+                let y = position.y as f32 * self.scale_factor;
 
                 if let Some((anchor, head)) = self.mouse.drag(&self.blocks, x, y) {
                     self.editor_state.selection = Selection::new(anchor, head);
@@ -305,6 +311,7 @@ fn main() {
             win: None,
             modifiers: ModifiersState::empty(),
             needs_layout: true,
+            scale_factor: 1.0,
         })
         .expect("run");
 }

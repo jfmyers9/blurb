@@ -90,12 +90,11 @@ impl Renderer {
                             .build();
 
                         let baseline = glyph_run.baseline();
-                        let glyph_offset = glyph_run.offset();
+                        let run_x = offset_x + glyph_run.offset();
 
                         // Handle strikethrough
                         let style = glyph_run.style();
                         if style.strikethrough.is_some() {
-                            let run_x = offset_x + glyph_offset;
                             let strike_y = offset_y + baseline - font_size * 0.3;
                             let run_width: f32 = glyph_run.glyphs().map(|g| g.advance).sum();
                             if let Some(rect) = Rect::from_xywh(run_x, strike_y, run_width, 1.0) {
@@ -107,14 +106,19 @@ impl Renderer {
                             }
                         }
 
+                        let mut cursor_x = 0.0f32;
                         for glyph in glyph_run.glyphs() {
+                            let glyph_x = cursor_x + glyph.x;
+                            let glyph_y = glyph.y;
+                            cursor_x += glyph.advance;
+
                             let image = Render::new(&[
                                 Source::ColorOutline(0),
                                 Source::ColorBitmap(StrikeWith::BestFit),
                                 Source::Outline,
                             ])
                             .format(Format::Alpha)
-                            .offset(Vector::new(glyph.x, glyph.y))
+                            .offset(Vector::new(glyph_x.fract(), glyph_y.fract()))
                             .render(&mut scaler, glyph.id as u16);
 
                             let image = match image {
@@ -123,10 +127,10 @@ impl Renderer {
                             };
 
                             let gx =
-                                (offset_x + glyph_offset + glyph.x + image.placement.left as f32)
-                                    as i32;
+                                (run_x + glyph_x.floor() + image.placement.left as f32) as i32;
                             let gy =
-                                (offset_y + baseline + glyph.y - image.placement.top as f32) as i32;
+                                (offset_y + baseline + glyph_y.floor() - image.placement.top as f32)
+                                    as i32;
 
                             match image.content {
                                 Content::Mask => {

@@ -54,6 +54,7 @@ struct LayoutState<'a> {
     font_cx: &'a mut FontContext,
     layout_cx: &'a mut LayoutContext<Color>,
     max_width: f32,
+    scale: f32,
     blocks: Vec<LayoutBlock>,
     y: f32,
 }
@@ -65,12 +66,25 @@ pub fn layout_document(
     layout_cx: &mut LayoutContext<Color>,
     max_width: f32,
 ) -> Vec<LayoutBlock> {
+    layout_document_scaled(doc, font_cx, layout_cx, max_width, 1.0)
+}
+
+/// Lay out a document with a display scale factor (e.g. 2.0 for Retina).
+/// `max_width` should be in logical points. Resulting coordinates are in physical pixels.
+pub fn layout_document_scaled(
+    doc: &Node,
+    font_cx: &mut FontContext,
+    layout_cx: &mut LayoutContext<Color>,
+    max_width: f32,
+    scale: f32,
+) -> Vec<LayoutBlock> {
     let mut state = LayoutState {
         font_cx,
         layout_cx,
         max_width,
+        scale,
         blocks: Vec::new(),
-        y: 10.0,
+        y: 10.0 * scale,
     };
     layout_blocks(&mut state, doc, 0.0, 0, 0);
     state.blocks
@@ -94,9 +108,16 @@ fn layout_blocks(
         NodeType::Paragraph => {
             let content_start = doc_pos + 1;
             let text_len = node.content.size();
+            let s = state.scale;
             let available = state.max_width - x_offset;
-            let layout =
-                build_inline_layout(node, state.font_cx, state.layout_cx, available, BODY_SIZE);
+            let layout = build_inline_layout(
+                node,
+                state.font_cx,
+                state.layout_cx,
+                available,
+                BODY_SIZE * s,
+                s,
+            );
             state.blocks.push(LayoutBlock {
                 layout,
                 x: x_offset,
@@ -108,11 +129,12 @@ fn layout_blocks(
                 doc_content_start: content_start,
                 text_len,
             });
-            state.y += state.blocks.last().unwrap().layout.height() + LINE_GAP;
+            state.y += state.blocks.last().unwrap().layout.height() + LINE_GAP * s;
         }
         NodeType::Heading => {
             let content_start = doc_pos + 1;
             let text_len = node.content.size();
+            let s = state.scale;
             let level: u8 = node
                 .attrs
                 .get("level")
@@ -124,9 +146,15 @@ fn layout_blocks(
                 _ => H3_SIZE,
             };
             let available = state.max_width - x_offset;
-            let layout =
-                build_inline_layout(node, state.font_cx, state.layout_cx, available, font_size);
-            state.y += font_size * 0.3;
+            let layout = build_inline_layout(
+                node,
+                state.font_cx,
+                state.layout_cx,
+                available,
+                font_size * s,
+                s,
+            );
+            state.y += font_size * s * 0.3;
             state.blocks.push(LayoutBlock {
                 layout,
                 x: x_offset,
@@ -138,23 +166,26 @@ fn layout_blocks(
                 doc_content_start: content_start,
                 text_len,
             });
-            state.y += state.blocks.last().unwrap().layout.height() + LINE_GAP;
+            state.y += state.blocks.last().unwrap().layout.height() + LINE_GAP * s;
         }
         NodeType::BulletList => {
+            let s = state.scale;
             let mut pos = doc_pos + 1;
             for (i, child) in node.content.children().iter().enumerate() {
-                layout_blocks(state, child, x_offset + LIST_INDENT, i, pos);
+                layout_blocks(state, child, x_offset + LIST_INDENT * s, i, pos);
                 pos += child.node_size();
             }
         }
         NodeType::OrderedList => {
+            let s = state.scale;
             let mut pos = doc_pos + 1;
             for (i, child) in node.content.children().iter().enumerate() {
-                layout_blocks(state, child, x_offset + LIST_INDENT, i + 1, pos);
+                layout_blocks(state, child, x_offset + LIST_INDENT * s, i + 1, pos);
                 pos += child.node_size();
             }
         }
         NodeType::ListItem => {
+            let s = state.scale;
             let bullet_text = if list_index > 0 {
                 format!("{}.", list_index)
             } else {
@@ -167,7 +198,7 @@ fn layout_blocks(
                 if first {
                     if let Some(block) = state.blocks.last_mut() {
                         block.bullet = Some(bullet_text.clone());
-                        block.bullet_x = x_offset - LIST_INDENT + 4.0;
+                        block.bullet_x = x_offset - LIST_INDENT * s + 4.0 * s;
                     }
                     first = false;
                 }
@@ -175,30 +206,34 @@ fn layout_blocks(
             }
         }
         NodeType::Blockquote => {
+            let s = state.scale;
             let mut pos = doc_pos + 1;
             for child in node.content.children() {
-                layout_blocks(state, child, x_offset + BLOCKQUOTE_INDENT, 0, pos);
+                layout_blocks(state, child, x_offset + BLOCKQUOTE_INDENT * s, 0, pos);
                 pos += child.node_size();
             }
         }
         NodeType::CodeBlock => {
             let content_start = doc_pos + 1;
             let text_len = node.content.size();
-            let available = state.max_width - x_offset - CODE_BLOCK_PAD * 2.0;
+            let s = state.scale;
+            let pad = CODE_BLOCK_PAD * s;
+            let available = state.max_width - x_offset - pad * 2.0;
             let text = collect_text(node);
             let layout = build_plain_layout(
                 state.font_cx,
                 state.layout_cx,
                 &text,
                 available,
-                BODY_SIZE,
+                BODY_SIZE * s,
                 true,
+                s,
             );
             let block_y = state.y;
             state.blocks.push(LayoutBlock {
                 layout,
-                x: x_offset + CODE_BLOCK_PAD,
-                y: block_y + CODE_BLOCK_PAD,
+                x: x_offset + pad,
+                y: block_y + pad,
                 bg: Some(CODE_BG),
                 is_hr: false,
                 bullet: None,
@@ -206,10 +241,11 @@ fn layout_blocks(
                 doc_content_start: content_start,
                 text_len,
             });
-            let block_height = state.blocks.last().unwrap().layout.height() + CODE_BLOCK_PAD * 2.0;
-            state.y += block_height + LINE_GAP;
+            let block_height = state.blocks.last().unwrap().layout.height() + pad * 2.0;
+            state.y += block_height + LINE_GAP * s;
         }
         NodeType::HorizontalRule => {
+            let s = state.scale;
             let layout = build_plain_layout(
                 state.font_cx,
                 state.layout_cx,
@@ -217,6 +253,7 @@ fn layout_blocks(
                 state.max_width,
                 1.0,
                 false,
+                s,
             );
             state.blocks.push(LayoutBlock {
                 layout,
@@ -229,7 +266,7 @@ fn layout_blocks(
                 doc_content_start: doc_pos,
                 text_len: 0,
             });
-            state.y += HR_HEIGHT;
+            state.y += HR_HEIGHT * s;
         }
         NodeType::Text => {}
     }
@@ -257,9 +294,9 @@ fn build_inline_layout(
     layout_cx: &mut LayoutContext<Color>,
     max_width: f32,
     base_size: f32,
+    scale: f32,
 ) -> Layout<Color> {
     let text = collect_text(node);
-    let scale = 1.0;
 
     let mut builder = layout_cx.ranged_builder(font_cx, &text, scale, true);
     builder.push_default(StyleProperty::FontSize(base_size));
@@ -330,8 +367,8 @@ fn build_plain_layout(
     max_width: f32,
     font_size: f32,
     monospace: bool,
+    scale: f32,
 ) -> Layout<Color> {
-    let scale = 1.0;
     let mut builder = layout_cx.ranged_builder(font_cx, text, scale, true);
     builder.push_default(StyleProperty::FontSize(font_size));
     builder.push_default(StyleProperty::Brush(TEXT_COLOR));

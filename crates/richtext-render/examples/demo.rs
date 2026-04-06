@@ -65,11 +65,14 @@ impl ApplicationHandler for App {
                     .resize(NonZeroU32::new(w).unwrap(), NonZeroU32::new(h).unwrap())
                     .expect("resize surface");
 
-                let blocks = layout::layout_document(
+                let scale = state.window.scale_factor() as f32;
+                let logical_width = w as f32 / scale;
+                let blocks = layout::layout_document_scaled(
                     &self.doc,
                     &mut self.font_cx,
                     &mut self.layout_cx,
-                    w as f32 - 20.0,
+                    logical_width - 20.0,
+                    scale,
                 );
 
                 let mut pixmap = Pixmap::new(w, h).expect("create pixmap");
