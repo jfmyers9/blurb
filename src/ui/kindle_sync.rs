@@ -1,12 +1,8 @@
 use dioxus::prelude::*;
 
-use tracing::error;
-
-use crate::data::commands::{
-    check_clippings_exist, enrich_book_db, get_book_db, import_clippings_db, import_kindle_books_db,
-};
+use crate::data::commands::{check_clippings_exist, import_clippings_db, import_kindle_books_db};
+use crate::services::enrichment::{run_enrichment, EnrichmentState};
 use crate::services::kindle::{detect_kindle, list_kindle_books, KindleBook};
-use crate::services::metadata;
 use crate::DatabaseHandle;
 
 #[derive(Clone, PartialEq)]
@@ -17,7 +13,6 @@ enum Phase {
     Scanning,
     Results,
     Importing,
-    Enriching,
     Clippings,
     ImportingClippings,
     Done,
@@ -61,6 +56,7 @@ pub struct KindleSyncProps {
 #[component]
 pub fn KindleSync(props: KindleSyncProps) -> Element {
     let db = use_context::<DatabaseHandle>();
+    let enrichment_state = use_context::<EnrichmentState>();
 
     let mut phase = use_signal(|| Phase::Disconnected);
     let mut mount_path: Signal<Option<String>> = use_signal(|| None);
@@ -69,7 +65,6 @@ pub fn KindleSync(props: KindleSyncProps) -> Element {
     let mut imported_count = use_signal(|| 0usize);
     let mut clippings_count = use_signal(|| 0usize);
     let mut imported_clippings_count = use_signal(|| 0usize);
-    let mut enriching_progress: Signal<(usize, usize)> = use_signal(|| (0, 0));
     let mut error: Signal<Option<String>> = use_signal(|| None);
 
     let handle_detect = move |_| {
@@ -135,39 +130,7 @@ pub fn KindleSync(props: KindleSyncProps) -> Element {
                         imported_count.set(ids.len());
                         on_import_complete.call(());
 
-                        // Check which imported books need enrichment
-                        let needs_enrichment: Vec<_> = {
-                            let conn = db.conn.lock().unwrap();
-                            ids.iter()
-                                .filter_map(|&id| get_book_db(&conn, id).ok())
-                                .filter(|b| b.author.is_none() || b.cover_url.is_none())
-                                .collect()
-                        };
-
-                        if !needs_enrichment.is_empty() {
-                            let total = needs_enrichment.len();
-                            enriching_progress.set((0, total));
-                            phase.set(Phase::Enriching);
-
-                            for (i, book) in needs_enrichment.into_iter().enumerate() {
-                                enriching_progress.set((i + 1, total));
-                                match metadata::search_by_title(&book.title, book.author.as_deref())
-                                    .await
-                                {
-                                    Ok(meta) => {
-                                        let conn = db.conn.lock().unwrap();
-                                        if let Err(e) = enrich_book_db(&conn, book.id, &meta) {
-                                            error!("enrich book {}: {e}", book.id);
-                                        }
-                                    }
-                                    Err(e) => {
-                                        error!("metadata fetch for book {}: {e}", book.id);
-                                    }
-                                }
-                                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                            }
-                            on_import_complete.call(());
-                        }
+                        spawn(run_enrichment(db.clone(), enrichment_state, ids));
 
                         if let Some(ref mp) = mp {
                             if let Ok(info) = check_clippings_exist(mp) {
@@ -439,18 +402,6 @@ pub fn KindleSync(props: KindleSyncProps) -> Element {
                                 class: "flex flex-col items-center gap-3 py-12",
                                 div { class: "h-8 w-8 animate-spin rounded-full border-2 border-amber-500 border-t-transparent" }
                                 p { class: "text-sm text-gray-400", "Importing books..." }
-                            }
-                        },
-                        Phase::Enriching => {
-                            let (current, total) = *enriching_progress.read();
-                            rsx! {
-                                div {
-                                    class: "flex flex-col items-center gap-3 py-12",
-                                    div { class: "h-8 w-8 animate-spin rounded-full border-2 border-amber-500 border-t-transparent" }
-                                    p { class: "text-sm text-gray-400",
-                                        "Enriching metadata... ({current}/{total})"
-                                    }
-                                }
                             }
                         },
                         Phase::Clippings => {

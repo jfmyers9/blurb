@@ -1,7 +1,11 @@
+use regex::Regex;
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 use std::time::Duration;
-use tracing::instrument;
+use tokio::sync::Mutex;
+use tokio::time::Instant;
+use tracing::{instrument, warn};
 
 static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     reqwest::Client::builder()
@@ -10,6 +14,57 @@ static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
         .build()
         .expect("failed to build HTTP client")
 });
+
+static OPEN_LIBRARY_LIMITER: LazyLock<Mutex<Instant>> =
+    LazyLock::new(|| Mutex::new(Instant::now()));
+static GOOGLE_BOOKS_LIMITER: LazyLock<Mutex<Instant>> =
+    LazyLock::new(|| Mutex::new(Instant::now()));
+
+const OPEN_LIBRARY_INTERVAL: Duration = Duration::from_millis(300);
+const GOOGLE_BOOKS_INTERVAL: Duration = Duration::from_millis(1000);
+const MAX_RETRIES: u32 = 3;
+
+async fn rate_limit(limiter: &Mutex<Instant>, min_interval: Duration) {
+    let mut last = limiter.lock().await;
+    let elapsed = last.elapsed();
+    if elapsed < min_interval {
+        tokio::time::sleep(min_interval - elapsed).await;
+    }
+    *last = Instant::now();
+}
+
+async fn send_with_backoff(
+    client: &reqwest::Client,
+    url: &str,
+    limiter: &Mutex<Instant>,
+    min_interval: Duration,
+) -> Result<reqwest::Response, String> {
+    for attempt in 0..=MAX_RETRIES {
+        if attempt > 0 {
+            rate_limit(limiter, min_interval).await;
+        }
+        let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
+
+        if resp.status() == StatusCode::TOO_MANY_REQUESTS {
+            if attempt == MAX_RETRIES {
+                return Err("429 Too Many Requests after max retries".into());
+            }
+            let backoff = resp
+                .headers()
+                .get("Retry-After")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.parse::<u64>().ok())
+                .map(Duration::from_secs)
+                .unwrap_or(Duration::from_secs(1 << attempt));
+            warn!(url, attempt, "429 rate limited, backing off {:?}", backoff);
+            tokio::time::sleep(backoff).await;
+            continue;
+        }
+
+        return resp.error_for_status().map_err(|e| e.to_string());
+    }
+    unreachable!()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct BookMetadata {
@@ -75,16 +130,13 @@ async fn open_library(isbn: &str) -> Result<BookMetadata, String> {
         isbn
     );
     let client = HTTP_CLIENT.clone();
-    let resp: std::collections::HashMap<String, OLBookData> = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .error_for_status()
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())?;
+    rate_limit(&OPEN_LIBRARY_LIMITER, OPEN_LIBRARY_INTERVAL).await;
+    let resp: std::collections::HashMap<String, OLBookData> =
+        send_with_backoff(&client, &url, &OPEN_LIBRARY_LIMITER, OPEN_LIBRARY_INTERVAL)
+            .await?
+            .json()
+            .await
+            .map_err(|e| e.to_string())?;
 
     let key = format!("ISBN:{}", isbn);
     let data = resp.get(&key).ok_or("ISBN not found on Open Library")?;
@@ -188,16 +240,13 @@ pub async fn search_covers(query: &str) -> Result<Vec<BookMetadata>, String> {
         "https://openlibrary.org/search.json?q={}&fields=title,author_name,cover_i,isbn,publisher,first_publish_year,number_of_pages_median,key&limit=5",
         urlencoding::encode(query)
     );
-    let resp: OLSearchResponse = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .error_for_status()
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())?;
+    rate_limit(&OPEN_LIBRARY_LIMITER, OPEN_LIBRARY_INTERVAL).await;
+    let resp: OLSearchResponse =
+        send_with_backoff(&client, &url, &OPEN_LIBRARY_LIMITER, OPEN_LIBRARY_INTERVAL)
+            .await?
+            .json()
+            .await
+            .map_err(|e| e.to_string())?;
 
     let mut seen_keys = std::collections::HashSet::new();
     let results = resp
@@ -222,15 +271,93 @@ pub async fn search_covers(query: &str) -> Result<Vec<BookMetadata>, String> {
     Ok(results)
 }
 
+pub fn sanitize_title(title: &str) -> String {
+    static RE_EDITION_PARENS: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(
+            r"(?i)\s*\([^)]*(?:Edition|Classics|International|Reprint|Paperback|Hardcover)[^)]*\)",
+        )
+        .unwrap()
+    });
+    static RE_SERIES_PARENS: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i)\s*\([^)]*(?:Book|Series)\s+\d+[^)]*\)").unwrap());
+    static RE_SUBTITLE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i):?\s*A\s+(?:Novel|Memoir|Story|Thriller)\s*$").unwrap());
+    static RE_MULTI_SPACE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s{2,}").unwrap());
+
+    let s = RE_EDITION_PARENS.replace_all(title, "");
+    let s = RE_SERIES_PARENS.replace_all(&s, "");
+    let s = RE_SUBTITLE.replace_all(&s, "");
+    let s = RE_MULTI_SPACE.replace_all(&s, " ");
+    s.trim().to_string()
+}
+
+pub fn validate_match(
+    original_title: &str,
+    original_author: Option<&str>,
+    result: &BookMetadata,
+) -> bool {
+    fn normalize(s: &str) -> String {
+        s.to_lowercase()
+            .chars()
+            .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+            .collect()
+    }
+
+    const STOP_WORDS: &[&str] = &["the", "a", "an", "of", "in", "on", "and", "or"];
+
+    let core = original_title.split(':').next().unwrap_or(original_title);
+    let core_norm = normalize(core);
+    let sig_words: Vec<&str> = core_norm
+        .split_whitespace()
+        .filter(|w| !STOP_WORDS.contains(w))
+        .collect();
+
+    let result_title_norm = result.title.as_deref().map(normalize).unwrap_or_default();
+
+    let title_ok = if sig_words.is_empty() {
+        // Short/punctuation-only titles: exact normalized match
+        result_title_norm.contains(&core_norm)
+    } else {
+        let matched = sig_words
+            .iter()
+            .filter(|w| result_title_norm.contains(**w))
+            .count();
+        matched * 2 >= sig_words.len() // at least 50%
+    };
+
+    let author_ok = match original_author {
+        Some(auth) => {
+            let last_word = auth.split_whitespace().last().unwrap_or(auth);
+            match result.author.as_deref() {
+                Some(result_auth) => result_auth
+                    .to_lowercase()
+                    .contains(&last_word.to_lowercase()),
+                None => true, // no result author to check against
+            }
+        }
+        None => true,
+    };
+
+    title_ok && author_ok
+}
+
 #[instrument(skip_all, err(level = tracing::Level::WARN))]
 pub async fn search_by_title(title: &str, author: Option<&str>) -> Result<BookMetadata, String> {
-    if let Ok(meta) = search_by_title_open_library(title, author).await {
-        if meta.title.is_some() {
+    let clean_title = sanitize_title(title);
+
+    if let Ok(meta) = search_by_title_open_library(&clean_title, author).await {
+        if meta.title.is_some() && validate_match(title, author, &meta) {
             return Ok(meta);
         }
     }
 
-    search_by_title_google(title, author).await
+    if let Ok(meta) = search_by_title_google(&clean_title, author).await {
+        if validate_match(title, author, &meta) {
+            return Ok(meta);
+        }
+    }
+
+    Err("no confident match found".into())
 }
 
 async fn search_by_title_open_library(
@@ -246,16 +373,13 @@ async fn search_by_title_open_library(
         urlencoding::encode(&query)
     );
     let client = HTTP_CLIENT.clone();
-    let resp: OLSearchResponse = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .error_for_status()
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())?;
+    rate_limit(&OPEN_LIBRARY_LIMITER, OPEN_LIBRARY_INTERVAL).await;
+    let resp: OLSearchResponse =
+        send_with_backoff(&client, &url, &OPEN_LIBRARY_LIMITER, OPEN_LIBRARY_INTERVAL)
+            .await?
+            .json()
+            .await
+            .map_err(|e| e.to_string())?;
 
     let doc = resp
         .docs
@@ -290,16 +414,13 @@ async fn search_by_title_google(title: &str, author: Option<&str>) -> Result<Boo
     };
     let url = format!("https://www.googleapis.com/books/v1/volumes?q={}", query);
     let client = HTTP_CLIENT.clone();
-    let resp: GoogleBooksResponse = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .error_for_status()
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())?;
+    rate_limit(&GOOGLE_BOOKS_LIMITER, GOOGLE_BOOKS_INTERVAL).await;
+    let resp: GoogleBooksResponse =
+        send_with_backoff(&client, &url, &GOOGLE_BOOKS_LIMITER, GOOGLE_BOOKS_INTERVAL)
+            .await?
+            .json()
+            .await
+            .map_err(|e| e.to_string())?;
 
     let vol = resp
         .items
@@ -332,16 +453,13 @@ async fn google_books(isbn: &str) -> Result<BookMetadata, String> {
         isbn
     );
     let client = HTTP_CLIENT.clone();
-    let resp: GoogleBooksResponse = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .error_for_status()
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())?;
+    rate_limit(&GOOGLE_BOOKS_LIMITER, GOOGLE_BOOKS_INTERVAL).await;
+    let resp: GoogleBooksResponse =
+        send_with_backoff(&client, &url, &GOOGLE_BOOKS_LIMITER, GOOGLE_BOOKS_INTERVAL)
+            .await?
+            .json()
+            .await
+            .map_err(|e| e.to_string())?;
 
     let vol = resp
         .items
