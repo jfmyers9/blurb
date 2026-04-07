@@ -54,7 +54,7 @@ pub struct Highlight {
     pub created_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HighlightSearchResult {
     pub id: i64,
     pub book_id: i64,

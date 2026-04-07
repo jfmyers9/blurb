@@ -16,6 +16,7 @@ use super::diary_entry_form::DiaryEntryForm;
 use super::diary_feed::DiaryFeed;
 use super::enrichment_bar::EnrichmentBar;
 use super::goodreads_import::GoodreadsImport;
+use super::highlights_browser::HighlightsBrowser;
 use super::kindle_sync::KindleSync;
 use super::library_grid::LibraryGrid;
 use super::library_list::LibraryList;
@@ -26,6 +27,7 @@ use crate::services::enrichment::EnrichmentState;
 enum AppView {
     Library,
     Diary,
+    Highlights,
 }
 
 #[component]
@@ -142,6 +144,16 @@ pub fn App() -> Element {
                                 "rounded-md px-3 py-1 text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                             },
                             "Diary"
+                        }
+                        button {
+                            r#type: "button",
+                            onclick: move |_| current_view.set(AppView::Highlights),
+                            class: if *current_view.read() == AppView::Highlights {
+                                "rounded-md px-3 py-1 text-sm font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+                            } else {
+                                "rounded-md px-3 py-1 text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                            },
+                            "Highlights"
                         }
                     }
                 }
@@ -312,6 +324,13 @@ pub fn App() -> Element {
                             on_select_entry: move |entry: DiaryEntry| selected_diary_entry.set(Some(entry)),
                         }
                     },
+                    AppView::Highlights => rsx! {
+                        HighlightsBrowser {
+                            on_select_book: move |id: i64| {
+                                selected_book_id.set(Some(id));
+                            },
+                        }
+                    },
                 }
             }
         }
@@ -410,6 +429,7 @@ pub fn App() -> Element {
                     }
                     "kindle-sync" => show_kindle_sync.set(true),
                     "goodreads-import" => show_goodreads_import.set(true),
+                    "switch-highlights" => current_view.set(AppView::Highlights),
                     _ => {}
                 }
             },

@@ -1275,3 +1275,140 @@ fn test_import_kindle_invalid_cover_base64_is_non_fatal() {
 
     let _ = std::fs::remove_dir_all(&tmp_dir);
 }
+
+#[test]
+fn test_list_all_highlights_db() {
+    let conn = test_conn();
+
+    let book1 = add_book_db(
+        &conn,
+        "First Book",
+        Some("Author A"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let book2 = add_book_db(
+        &conn,
+        "Second Book",
+        Some("Author B"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    conn.execute(
+        "INSERT INTO highlights (book_id, text, location_start, clip_type, clipped_at, created_at) \
+         VALUES (?1, ?2, ?3, ?4, datetime('now', '-2 hours'), datetime('now'))",
+        rusqlite::params![book1, "A highlight from book one", 10, "highlight"],
+    )
+    .unwrap();
+
+    conn.execute(
+        "INSERT INTO highlights (book_id, text, location_start, clip_type, clipped_at, created_at) \
+         VALUES (?1, ?2, ?3, ?4, datetime('now', '-1 hour'), datetime('now'))",
+        rusqlite::params![book2, "A note from book two", 20, "note"],
+    )
+    .unwrap();
+
+    conn.execute(
+        "INSERT INTO highlights (book_id, text, location_start, clip_type, clipped_at, created_at) \
+         VALUES (?1, ?2, ?3, ?4, datetime('now'), datetime('now'))",
+        rusqlite::params![book1, "A bookmark from book one", 30, "bookmark"],
+    )
+    .unwrap();
+
+    let results = list_all_highlights_db(&conn).unwrap();
+
+    assert_eq!(results.len(), 3);
+
+    // Ordered by clipped_at DESC — most recent first
+    assert_eq!(results[0].text, "A bookmark from book one");
+    assert_eq!(results[0].book_title, "First Book");
+    assert_eq!(results[0].book_author, Some("Author A".to_string()));
+    assert_eq!(results[0].clip_type, "bookmark");
+
+    assert_eq!(results[1].text, "A note from book two");
+    assert_eq!(results[1].book_title, "Second Book");
+    assert_eq!(results[1].book_author, Some("Author B".to_string()));
+    assert_eq!(results[1].clip_type, "note");
+
+    assert_eq!(results[2].text, "A highlight from book one");
+    assert_eq!(results[2].book_title, "First Book");
+    assert_eq!(results[2].book_author, Some("Author A".to_string()));
+    assert_eq!(results[2].clip_type, "highlight");
+}
+
+#[test]
+fn test_list_all_highlights_db_empty() {
+    let conn = test_conn();
+    let results = list_all_highlights_db(&conn).unwrap();
+    assert!(results.is_empty());
+}
+
+#[test]
+fn test_list_all_highlights_db_null_author() {
+    let conn = test_conn();
+    let book_id = add_book_db(
+        &conn,
+        "No Author Book",
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO highlights (book_id, text, clip_type, clipped_at) VALUES (?1, ?2, ?3, datetime('now'))",
+        rusqlite::params![book_id, "some highlight", "highlight"],
+    )
+    .unwrap();
+
+    let results = list_all_highlights_db(&conn).unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].book_author, None);
+}
+
+#[test]
+fn test_list_all_highlights_db_null_optional_fields() {
+    let conn = test_conn();
+    let book_id = add_book_db(
+        &conn,
+        "Test Book",
+        Some("Author"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO highlights (book_id, text, clip_type, clipped_at) VALUES (?1, ?2, ?3, datetime('now'))",
+        rusqlite::params![book_id, "text only", "highlight"],
+    )
+    .unwrap();
+
+    let results = list_all_highlights_db(&conn).unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].page, None);
+    assert_eq!(results[0].location_start, None);
+    assert_eq!(results[0].location_end, None);
+}

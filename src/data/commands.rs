@@ -692,6 +692,22 @@ pub fn list_highlights_db(
     Ok(highlights)
 }
 
+fn map_highlight_row(row: &rusqlite::Row) -> rusqlite::Result<HighlightSearchResult> {
+    Ok(HighlightSearchResult {
+        id: row.get(0)?,
+        book_id: row.get(1)?,
+        text: row.get(2)?,
+        location_start: row.get(3)?,
+        location_end: row.get(4)?,
+        page: row.get(5)?,
+        clip_type: row.get(6)?,
+        clipped_at: row.get(7)?,
+        created_at: row.get(8)?,
+        book_title: row.get(9)?,
+        book_author: row.get(10)?,
+    })
+}
+
 pub fn search_highlights_db(
     conn: &rusqlite::Connection,
     query: &str,
@@ -711,21 +727,28 @@ pub fn search_highlights_db(
         .map_err(|e| e.to_string())?;
 
     let results = stmt
-        .query_map([&escaped], |row| {
-            Ok(HighlightSearchResult {
-                id: row.get(0)?,
-                book_id: row.get(1)?,
-                text: row.get(2)?,
-                location_start: row.get(3)?,
-                location_end: row.get(4)?,
-                page: row.get(5)?,
-                clip_type: row.get(6)?,
-                clipped_at: row.get(7)?,
-                created_at: row.get(8)?,
-                book_title: row.get(9)?,
-                book_author: row.get(10)?,
-            })
-        })
+        .query_map([&escaped], map_highlight_row)
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(results)
+}
+
+pub fn list_all_highlights_db(
+    conn: &rusqlite::Connection,
+) -> Result<Vec<HighlightSearchResult>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT h.id, h.book_id, h.text, h.location_start, h.location_end, h.page, \
+             h.clip_type, h.clipped_at, h.created_at, b.title, b.author \
+             FROM highlights h JOIN books b ON h.book_id = b.id \
+             ORDER BY h.clipped_at DESC",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let results = stmt
+        .query_map([], map_highlight_row)
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
