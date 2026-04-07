@@ -15,6 +15,7 @@ use super::command_palette::CommandPalette;
 use super::diary_entry_form::DiaryEntryForm;
 use super::diary_feed::DiaryFeed;
 use super::enrichment_bar::EnrichmentBar;
+use super::goodreads_import::GoodreadsImport;
 use super::kindle_sync::KindleSync;
 use super::library_grid::LibraryGrid;
 use super::library_list::LibraryList;
@@ -40,6 +41,7 @@ pub fn App() -> Element {
     let mut selected_diary_entry: Signal<Option<DiaryEntry>> = use_signal(|| None);
     let mut show_add_form = use_signal(|| false);
     let mut show_kindle_sync = use_signal(|| false);
+    let mut show_goodreads_import = use_signal(|| false);
     let mut palette_open = use_signal(|| false);
     let mut current_view = use_signal(|| AppView::Library);
 
@@ -191,6 +193,27 @@ pub fn App() -> Element {
                                 stroke_linejoin: "round",
                                 stroke_width: "1.5",
                                 d: "M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25",
+                            }
+                        }
+                    }
+                    // Goodreads import button
+                    button {
+                        r#type: "button",
+                        title: "Import Goodreads",
+                        onclick: move |_| show_goodreads_import.set(true),
+                        class: "flex h-9 w-9 items-center justify-center rounded-full
+                            text-gray-400 transition hover:bg-gray-100 hover:text-gray-600
+                            dark:hover:bg-gray-800 dark:hover:text-gray-300",
+                        svg {
+                            class: "h-5 w-5",
+                            fill: "none",
+                            stroke: "currentColor",
+                            view_box: "0 0 24 24",
+                            path {
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                stroke_width: "1.5",
+                                d: "M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5",
                             }
                         }
                     }
@@ -353,6 +376,17 @@ pub fn App() -> Element {
             }
         }
 
+        // Goodreads import modal
+        if *show_goodreads_import.read() {
+            GoodreadsImport {
+                on_close: move |_| show_goodreads_import.set(false),
+                on_import_complete: {
+                    let reload_data = reload_data.clone();
+                    move |_| reload_data()
+                },
+            }
+        }
+
         // Command palette overlay
         CommandPalette {
             is_open: *palette_open.read(),
@@ -375,6 +409,7 @@ pub fn App() -> Element {
                         });
                     }
                     "kindle-sync" => show_kindle_sync.set(true),
+                    "goodreads-import" => show_goodreads_import.set(true),
                     _ => {}
                 }
             },
