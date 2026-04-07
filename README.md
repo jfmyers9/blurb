@@ -50,45 +50,6 @@ The app will open in a native desktop window.
 dx build --release
 ```
 
-## Project Structure
-
-```
-src/
-  main.rs                       # Entry point: init logging, init DB, launch Dioxus desktop window
-  logging.rs                     # Tracing subscriber setup (file + stdout, daily rotation)
-  data/
-    commands.rs                  # SQLite query functions (CRUD for books, shelves, highlights, diary)
-    db.rs                        # Database initialization
-    migrations.rs                # Versioned schema migrations
-    models.rs                    # Data structures (Book, DiaryEntry, Shelf, Highlight)
-  services/
-    metadata.rs                  # ISBN lookup via Open Library / Google Books
-    kindle.rs                    # Kindle USB detection and MOBI scanning
-    clippings.rs                 # Kindle clippings parser
-  hooks/
-    use_library_filter.rs        # Custom hook for filtering, sorting, search, view mode
-  ui/
-    app.rs                       # Root component, top-level state management
-    library_grid.rs              # Cover grid layout
-    library_list.rs              # List view layout
-    book_card.rs                 # Book tile in the library grid
-    book_detail.rs               # Detail panel with editing, rating, review, diary
-    add_book_form.rs             # Modal for adding new books
-    kindle_sync.rs               # Kindle device detection and import UI
-    status_filter_bar.rs         # Filter bar (status, shelf, rating, sort, view toggle)
-    command_palette.rs           # Keyboard-driven command palette
-    diary_feed.rs                # Reading diary view
-    diary_entry_form.rs          # Diary entry editor
-    shelf_picker.rs              # Shelf assignment UI
-    rating_stars.rs              # Clickable 1-5 star rating widget
-    status_select.rs             # Reading status dropdown
-    sort_dropdown.rs             # Sort options dropdown
-
-assets/
-  tailwind.css                   # Compiled Tailwind styles
-  icons/                         # App icons
-```
-
 ## Logging
 
 Blurb writes structured logs to a daily rolling file:
