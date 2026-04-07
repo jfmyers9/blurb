@@ -1,7 +1,9 @@
 use dioxus::prelude::*;
 
 use crate::data::commands::{count_goodreads_duplicates_db, import_goodreads_books_db};
-use crate::services::enrichment::{run_enrichment, EnrichmentState};
+use crate::services::enrichment::{
+    run_enrichment, EnrichmentState, EnrichmentStatus, ImportSource,
+};
 use crate::services::goodreads::{parse_goodreads_csv, GoodreadsBook};
 use crate::DatabaseHandle;
 
@@ -31,6 +33,14 @@ pub fn GoodreadsImport(props: GoodreadsImportProps) -> Element {
     let mut imported_count = use_signal(|| 0usize);
     let mut skipped_count = use_signal(|| 0usize);
     let mut error: Signal<Option<String>> = use_signal(|| None);
+
+    let mut include_finished = use_signal(|| true);
+    let mut include_reading = use_signal(|| true);
+    let mut include_want_to_read = use_signal(|| true);
+    let mut import_ratings = use_signal(|| true);
+    let mut import_read_dates = use_signal(|| true);
+    let mut enrich = use_signal(|| true);
+    let mut enrichment_warning = use_signal(|| false);
 
     let handle_pick_file = {
         let db = db.clone();
@@ -75,7 +85,28 @@ pub fn GoodreadsImport(props: GoodreadsImportProps) -> Element {
         let on_import_complete = props.on_import_complete;
         move |_| {
             let db = db.clone();
-            let books = parsed_books.read().clone();
+            let should_enrich = *enrich.read();
+            let mut books: Vec<GoodreadsBook> = parsed_books
+                .read()
+                .iter()
+                .filter(|b| match b.status.as_str() {
+                    "finished" => *include_finished.read(),
+                    "reading" => *include_reading.read(),
+                    "want_to_read" => *include_want_to_read.read(),
+                    _ => true,
+                })
+                .cloned()
+                .collect();
+            if !*import_ratings.read() {
+                for book in &mut books {
+                    book.rating = None;
+                }
+            }
+            if !*import_read_dates.read() {
+                for book in &mut books {
+                    book.date_read = None;
+                }
+            }
             phase.set(Phase::Importing);
             error.set(None);
             spawn(async move {
@@ -88,12 +119,21 @@ pub fn GoodreadsImport(props: GoodreadsImportProps) -> Element {
                         imported_count.set(res.imported_count);
                         skipped_count.set(res.skipped_count);
                         on_import_complete.call(());
-                        if !res.new_book_ids.is_empty() {
-                            spawn(run_enrichment(
-                                db.clone(),
-                                enrichment_state,
-                                res.new_book_ids,
-                            ));
+                        if should_enrich && !res.new_book_ids.is_empty() {
+                            let is_running = matches!(
+                                *enrichment_state.status.read(),
+                                EnrichmentStatus::Running { .. }
+                            );
+                            if is_running {
+                                enrichment_warning.set(true);
+                            } else {
+                                spawn(run_enrichment(
+                                    db.clone(),
+                                    enrichment_state,
+                                    res.new_book_ids,
+                                    ImportSource::Goodreads,
+                                ));
+                            }
                         }
                         phase.set(Phase::Done);
                     }
@@ -107,6 +147,16 @@ pub fn GoodreadsImport(props: GoodreadsImportProps) -> Element {
     };
 
     let total = parsed_books.read().len();
+    let filtered_count = parsed_books
+        .read()
+        .iter()
+        .filter(|b| match b.status.as_str() {
+            "finished" => *include_finished.read(),
+            "reading" => *include_reading.read(),
+            "want_to_read" => *include_want_to_read.read(),
+            _ => true,
+        })
+        .count();
     let dupes = *duplicate_count.read();
 
     rsx! {
@@ -206,6 +256,11 @@ pub fn GoodreadsImport(props: GoodreadsImportProps) -> Element {
                                     "Found "
                                     span { class: "font-bold text-amber-400", "{total}" }
                                     if total == 1 { " book" } else { " books" }
+                                    if filtered_count != total {
+                                        " ("
+                                        span { class: "font-bold text-amber-400", "{filtered_count}" }
+                                        " selected)"
+                                    }
                                 }
                                 if dupes > 0 {
                                     p {
@@ -214,8 +269,85 @@ pub fn GoodreadsImport(props: GoodreadsImportProps) -> Element {
                                         " already in library, will be skipped"
                                     }
                                 }
+
+                                // Import options
                                 div {
-                                    class: "flex gap-3",
+                                    class: "mt-4 w-full border-t border-gray-700 pt-4 text-left space-y-3",
+
+                                    // Shelf filter
+                                    div {
+                                        class: "space-y-1",
+                                        p { class: "text-sm font-medium text-gray-300", "Shelves to import:" }
+                                        label {
+                                            class: "flex items-center gap-2 text-sm text-gray-400",
+                                            input {
+                                                r#type: "checkbox",
+                                                class: "h-4 w-4 rounded border-gray-600 bg-gray-800 text-amber-500 accent-amber-500",
+                                                checked: *include_finished.read(),
+                                                onchange: move |_| { let v = *include_finished.read(); include_finished.set(!v); },
+                                            }
+                                            "Read"
+                                        }
+                                        label {
+                                            class: "flex items-center gap-2 text-sm text-gray-400",
+                                            input {
+                                                r#type: "checkbox",
+                                                class: "h-4 w-4 rounded border-gray-600 bg-gray-800 text-amber-500 accent-amber-500",
+                                                checked: *include_reading.read(),
+                                                onchange: move |_| { let v = *include_reading.read(); include_reading.set(!v); },
+                                            }
+                                            "Currently Reading"
+                                        }
+                                        label {
+                                            class: "flex items-center gap-2 text-sm text-gray-400",
+                                            input {
+                                                r#type: "checkbox",
+                                                class: "h-4 w-4 rounded border-gray-600 bg-gray-800 text-amber-500 accent-amber-500",
+                                                checked: *include_want_to_read.read(),
+                                                onchange: move |_| { let v = *include_want_to_read.read(); include_want_to_read.set(!v); },
+                                            }
+                                            "Want to Read"
+                                        }
+                                    }
+
+                                    // Data options
+                                    div {
+                                        class: "space-y-1",
+                                        label {
+                                            class: "flex items-center gap-2 text-sm text-gray-400",
+                                            input {
+                                                r#type: "checkbox",
+                                                class: "h-4 w-4 rounded border-gray-600 bg-gray-800 text-amber-500 accent-amber-500",
+                                                checked: *import_ratings.read(),
+                                                onchange: move |_| { let v = *import_ratings.read(); import_ratings.set(!v); },
+                                            }
+                                            "Import ratings"
+                                        }
+                                        label {
+                                            class: "flex items-center gap-2 text-sm text-gray-400",
+                                            input {
+                                                r#type: "checkbox",
+                                                class: "h-4 w-4 rounded border-gray-600 bg-gray-800 text-amber-500 accent-amber-500",
+                                                checked: *import_read_dates.read(),
+                                                onchange: move |_| { let v = *import_read_dates.read(); import_read_dates.set(!v); },
+                                            }
+                                            "Import read dates"
+                                        }
+                                        label {
+                                            class: "flex items-center gap-2 text-sm text-gray-400",
+                                            input {
+                                                r#type: "checkbox",
+                                                class: "h-4 w-4 rounded border-gray-600 bg-gray-800 text-amber-500 accent-amber-500",
+                                                checked: *enrich.read(),
+                                                onchange: move |_| { let v = *enrich.read(); enrich.set(!v); },
+                                            }
+                                            "Fetch covers & metadata"
+                                        }
+                                    }
+                                }
+
+                                div {
+                                    class: "flex gap-3 mt-4",
                                     button {
                                         r#type: "button",
                                         onclick: move |_| {
@@ -275,6 +407,17 @@ pub fn GoodreadsImport(props: GoodreadsImportProps) -> Element {
                                             class: "text-sm text-gray-400",
                                             span { class: "font-bold text-amber-400", "{sc}" }
                                             " skipped (already in library)"
+                                        }
+                                    }
+                                    if *enrichment_warning.read() {
+                                        p {
+                                            class: "text-sm text-amber-400",
+                                            "Enrichment is already running. New books will be enriched when the current batch finishes."
+                                        }
+                                    } else if *enrich.read() && ic > 0 {
+                                        p {
+                                            class: "text-sm text-gray-400",
+                                            "Enrichment running in background"
                                         }
                                     }
                                     button {

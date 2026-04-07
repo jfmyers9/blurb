@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
-use tracing::{instrument, warn};
+use tracing::{info, instrument, warn};
 
 static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     reqwest::Client::builder()
@@ -20,8 +20,8 @@ static OPEN_LIBRARY_LIMITER: LazyLock<Mutex<Instant>> =
 static GOOGLE_BOOKS_LIMITER: LazyLock<Mutex<Instant>> =
     LazyLock::new(|| Mutex::new(Instant::now()));
 
-const OPEN_LIBRARY_INTERVAL: Duration = Duration::from_millis(300);
-const GOOGLE_BOOKS_INTERVAL: Duration = Duration::from_millis(1000);
+const OPEN_LIBRARY_INTERVAL: Duration = Duration::from_millis(1000);
+const GOOGLE_BOOKS_INTERVAL: Duration = Duration::from_millis(1500);
 const MAX_RETRIES: u32 = 3;
 
 async fn rate_limit(limiter: &Mutex<Instant>, min_interval: Duration) {
@@ -61,6 +61,9 @@ async fn send_with_backoff(
             continue;
         }
 
+        if attempt > 0 {
+            info!(url, attempt, "request succeeded after retry");
+        }
         return resp.error_for_status().map_err(|e| e.to_string());
     }
     unreachable!()
@@ -347,16 +350,27 @@ pub async fn search_by_title(title: &str, author: Option<&str>) -> Result<BookMe
 
     if let Ok(meta) = search_by_title_open_library(&clean_title, author).await {
         if meta.title.is_some() && validate_match(title, author, &meta) {
+            info!(
+                title,
+                result_title = meta.title.as_deref(),
+                "matched via Open Library"
+            );
             return Ok(meta);
         }
     }
 
     if let Ok(meta) = search_by_title_google(&clean_title, author).await {
         if validate_match(title, author, &meta) {
+            info!(
+                title,
+                result_title = meta.title.as_deref(),
+                "matched via Google Books"
+            );
             return Ok(meta);
         }
     }
 
+    warn!(title, "no confident match found from any source");
     Err("no confident match found".into())
 }
 
