@@ -1,4 +1,5 @@
 use crate::data::models::{Book, DiaryEntry, Highlight, HighlightSearchResult, Shelf};
+use crate::services::goodreads::GoodreadsBook;
 use crate::services::kindle::KindleBook;
 use crate::services::metadata::BookMetadata;
 use std::fs;
@@ -323,6 +324,147 @@ pub fn import_kindle_books_db(
     }
     tx.commit().map_err(|e| e.to_string())?;
     Ok(ids)
+}
+
+#[derive(Debug)]
+pub struct ImportResult {
+    pub imported_count: usize,
+    pub skipped_count: usize,
+    pub new_book_ids: Vec<i64>,
+}
+
+pub fn count_goodreads_duplicates_db(
+    conn: &rusqlite::Connection,
+    books: &[GoodreadsBook],
+) -> Result<usize, String> {
+    let mut stmt = conn
+        .prepare("SELECT EXISTS(SELECT 1 FROM books WHERE LOWER(TRIM(title)) = LOWER(TRIM(?1)))")
+        .map_err(|e| e.to_string())?;
+    let mut count = 0;
+    for book in books {
+        let exists: bool = stmt
+            .query_row([&book.title], |row| row.get(0))
+            .map_err(|e| e.to_string())?;
+        if exists {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+#[tracing::instrument(skip_all, fields(book_count = books.len()), err)]
+pub fn import_goodreads_books_db(
+    conn: &mut rusqlite::Connection,
+    books: &[GoodreadsBook],
+) -> Result<ImportResult, String> {
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let mut new_book_ids = Vec::new();
+    let mut skipped_count = 0;
+
+    for book in books {
+        let exists: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM books WHERE LOWER(TRIM(title)) = LOWER(TRIM(?1)))",
+                [&book.title],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if exists {
+            skipped_count += 1;
+            continue;
+        }
+
+        // Pick best ISBN available
+        let isbn = book.isbn.as_deref().or(book.isbn13.as_deref());
+
+        tx.execute(
+            "INSERT INTO books (title, author, isbn, publisher, published_date, page_count, \
+             created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'), datetime('now'))",
+            rusqlite::params![
+                book.title,
+                book.author,
+                isbn,
+                book.publisher,
+                book.published_year,
+                book.page_count,
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        let book_id = tx.last_insert_rowid();
+
+        // Reading status
+        let finished_at = if book.status == "finished" {
+            book.date_read.as_deref()
+        } else {
+            None
+        };
+        let started_at = if book.status == "reading" {
+            book.date_added.as_deref()
+        } else {
+            None
+        };
+        tx.execute(
+            "INSERT OR REPLACE INTO reading_status (book_id, status, started_at, finished_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, datetime('now'))",
+            rusqlite::params![book_id, book.status, started_at, finished_at],
+        )
+        .map_err(|e| e.to_string())?;
+
+        // Rating
+        if let Some(score) = book.rating {
+            tx.execute(
+                "INSERT OR REPLACE INTO ratings (book_id, score, created_at, updated_at) \
+                 VALUES (?1, ?2, datetime('now'), datetime('now'))",
+                rusqlite::params![book_id, score],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+
+        // Review
+        if let Some(ref text) = book.review_text {
+            if !text.is_empty() {
+                tx.execute(
+                    "INSERT OR IGNORE INTO reviews (book_id, body, created_at, updated_at) \
+                     VALUES (?1, ?2, datetime('now'), datetime('now'))",
+                    rusqlite::params![book_id, text],
+                )
+                .map_err(|e| e.to_string())?;
+            }
+        }
+
+        // Bookshelves
+        for shelf_name in &book.bookshelves {
+            tx.execute(
+                "INSERT OR IGNORE INTO shelves (name) VALUES (?1)",
+                rusqlite::params![shelf_name],
+            )
+            .map_err(|e| e.to_string())?;
+            let shelf_id: i64 = tx
+                .query_row(
+                    "SELECT id FROM shelves WHERE name = ?1",
+                    rusqlite::params![shelf_name],
+                    |row| row.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+            tx.execute(
+                "INSERT OR IGNORE INTO book_shelves (book_id, shelf_id) VALUES (?1, ?2)",
+                rusqlite::params![book_id, shelf_id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+
+        new_book_ids.push(book_id);
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    let imported_count = new_book_ids.len();
+    info!(imported_count, skipped_count, "goodreads import complete");
+    Ok(ImportResult {
+        imported_count,
+        skipped_count,
+        new_book_ids,
+    })
 }
 
 pub fn upload_cover_db(
