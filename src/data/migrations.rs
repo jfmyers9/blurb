@@ -120,12 +120,16 @@ fn migrations() -> Vec<Migration> {
     ]
 }
 
-fn get_user_version(conn: &Connection) -> Result<i32, rusqlite::Error> {
+pub(crate) fn get_user_version(conn: &Connection) -> Result<i32, rusqlite::Error> {
     conn.query_row("PRAGMA user_version", [], |row| row.get(0))
 }
 
 fn set_user_version(conn: &Connection, version: i32) -> Result<(), rusqlite::Error> {
     conn.execute_batch(&format!("PRAGMA user_version = {version}"))
+}
+
+pub(crate) fn latest_version() -> i32 {
+    migrations().last().map(|m| m.version).unwrap_or(0)
 }
 
 pub fn run_migration_list(conn: &Connection, migrations: &[Migration]) -> Result<(), String> {
@@ -154,6 +158,11 @@ pub fn run_migrations(conn: &Connection) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
 
     run_migration_list(conn, &migrations())
+}
+
+#[cfg(test)]
+pub(crate) fn migrations_for_testing() -> Vec<Migration> {
+    migrations()
 }
 
 #[cfg(test)]
