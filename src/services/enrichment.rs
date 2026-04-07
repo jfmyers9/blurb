@@ -84,6 +84,13 @@ pub async fn run_enrichment(db: DatabaseHandle, mut state: EnrichmentState, book
                     error!("enrich book {}: {e}", book.id);
                     failed += 1;
                 } else {
+                    info!(
+                        book_id = book.id,
+                        title = book.title,
+                        "enriched ({}/{})",
+                        i + 1,
+                        total
+                    );
                     succeeded += 1;
                 }
             }
