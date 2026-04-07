@@ -5,6 +5,7 @@ use crate::services::enrichment::{EnrichmentState, EnrichmentStatus};
 #[component]
 pub fn EnrichmentBar() -> Element {
     let mut state = use_context::<EnrichmentState>();
+    let mut cancelled_state = state;
     let status = state.status.read().clone();
 
     match status {
@@ -13,7 +14,9 @@ pub fn EnrichmentBar() -> Element {
             current,
             total,
             current_title,
+            source,
         } => {
+            let label = source.label();
             let pct = if total > 0 {
                 (current as f64 / total as f64) * 100.0
             } else {
@@ -33,7 +36,14 @@ pub fn EnrichmentBar() -> Element {
                     }
                     span {
                         class: "shrink-0 text-gray-600 dark:text-gray-400",
-                        "Enriching {current}/{total} — {current_title}"
+                        "Enriching {label}: {current}/{total} — {current_title}"
+                    }
+                    button {
+                        r#type: "button",
+                        onclick: move |_| cancelled_state.cancelled.set(true),
+                        class: "rounded px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-100
+                            dark:text-gray-400 dark:hover:bg-gray-800",
+                        "Cancel"
                     }
                 }
             }

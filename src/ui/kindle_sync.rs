@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 
 use crate::data::commands::{check_clippings_exist, import_clippings_db, import_kindle_books_db};
-use crate::services::enrichment::{run_enrichment, EnrichmentState};
+use crate::services::enrichment::{run_enrichment, EnrichmentState, ImportSource};
 use crate::services::kindle::{detect_kindle, list_kindle_books, KindleBook};
 use crate::DatabaseHandle;
 
@@ -66,6 +66,8 @@ pub fn KindleSync(props: KindleSyncProps) -> Element {
     let mut clippings_count = use_signal(|| 0usize);
     let mut imported_clippings_count = use_signal(|| 0usize);
     let mut error: Signal<Option<String>> = use_signal(|| None);
+    let mut enrich = use_signal(|| true);
+    let mut enrichment_started = use_signal(|| false);
 
     let handle_detect = move |_| {
         phase.set(Phase::Detecting);
@@ -119,6 +121,7 @@ pub fn KindleSync(props: KindleSyncProps) -> Element {
             }
             phase.set(Phase::Importing);
             error.set(None);
+            let should_enrich = *enrich.read();
             spawn(async move {
                 let covers_dir = crate::data::db::covers_dir().ok();
                 let result = {
@@ -130,7 +133,15 @@ pub fn KindleSync(props: KindleSyncProps) -> Element {
                         imported_count.set(ids.len());
                         on_import_complete.call(());
 
-                        spawn(run_enrichment(db.clone(), enrichment_state, ids));
+                        if should_enrich && !ids.is_empty() {
+                            enrichment_started.set(true);
+                            spawn(run_enrichment(
+                                db.clone(),
+                                enrichment_state,
+                                ids,
+                                ImportSource::Kindle,
+                            ));
+                        }
 
                         if let Some(ref mp) = mp {
                             if let Ok(info) = check_clippings_exist(mp) {
@@ -495,6 +506,12 @@ pub fn KindleSync(props: KindleSyncProps) -> Element {
                                             " highlight{plural(icc)}"
                                         }
                                     }
+                                    if *enrichment_started.read() {
+                                        p {
+                                            class: "text-sm text-gray-400",
+                                            "Enrichment running in background"
+                                        }
+                                    }
                                     button {
                                         r#type: "button",
                                         onclick: move |_| props.on_close.call(()),
@@ -512,6 +529,16 @@ pub fn KindleSync(props: KindleSyncProps) -> Element {
                 if *phase.read() == Phase::Results && !kindle_books.read().is_empty() && selected_count > 0 {
                     div {
                         class: "border-t border-gray-700 px-5 py-3",
+                        label {
+                            class: "mb-3 flex items-center gap-2",
+                            input {
+                                r#type: "checkbox",
+                                checked: *enrich.read(),
+                                onchange: move |_| { let v = *enrich.read(); enrich.set(!v); },
+                                class: "h-4 w-4 rounded border-gray-600 bg-gray-800 text-amber-500 accent-amber-500",
+                            }
+                            span { class: "text-sm text-gray-400", "Fetch covers & metadata" }
+                        }
                         button {
                             r#type: "button",
                             onclick: handle_import,
