@@ -38,6 +38,11 @@ const COMMANDS: &[PaletteCommand] = &[
         label: "Open Kindle Sync",
         keywords: &["kindle", "sync", "import", "device"],
     },
+    PaletteCommand {
+        id: "switch-highlights",
+        label: "Switch to Highlights",
+        keywords: &["view", "highlights", "clippings"],
+    },
 ];
 
 #[derive(Clone, PartialEq)]

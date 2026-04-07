@@ -8,6 +8,7 @@ mod diary_feed;
 mod editor_toolbar;
 pub mod enrichment_bar;
 pub mod goodreads_import;
+mod highlights_browser;
 mod kindle_sync;
 mod library_grid;
 mod library_list;
