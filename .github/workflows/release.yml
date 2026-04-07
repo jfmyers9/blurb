@@ -14,7 +14,7 @@ permissions:
   contents: write
 
 env:
-  DX_VERSION: "0.7.2"
+  DX_VERSION: "0.7.4"
 
 jobs:
   changelog:
@@ -49,6 +49,13 @@ jobs:
       fail-fast: false
       matrix:
         platform: [macos-latest, windows-latest, ubuntu-latest]
+        include:
+          - platform: macos-latest
+            package_type: dmg
+          - platform: windows-latest
+            package_type: msi
+          - platform: ubuntu-latest
+            package_type: deb
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
@@ -86,21 +93,12 @@ jobs:
         with:
           tool: dioxus-cli@${{ env.DX_VERSION }}
 
-      - name: Install jq (Windows)
-        if: matrix.platform == 'windows-latest'
-        shell: bash
-        run: choco install jq -y
-
       - name: Bundle and collect artifacts
         shell: bash
         run: |
-          mkdir -p dist
-          dx bundle --release --json-output --verbose | tail -1 \
-            | jq -r '.json | fromjson | .BundleOutput.bundles[]' \
-            | while read -r path; do
-                cp -r "$path" dist/
-              done
+          dx bundle --release --package-types "${{ matrix.package_type }}" --out-dir dist --verbose
           ls -la dist/
+          test -n "$(ls -A dist/)" || { echo "::error::No artifacts produced"; exit 1; }
 
       - uses: softprops/action-gh-release@v2
         env:

@@ -8,7 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  DX_VERSION: "0.7.2"
+  DX_VERSION: "0.7.4"
 
 jobs:
   editor-bundle:
