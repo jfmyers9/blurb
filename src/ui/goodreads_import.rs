@@ -89,7 +89,11 @@ pub fn GoodreadsImport(props: GoodreadsImportProps) -> Element {
                         skipped_count.set(res.skipped_count);
                         on_import_complete.call(());
                         if !res.new_book_ids.is_empty() {
-                            spawn(run_enrichment(db.clone(), enrichment_state, res.new_book_ids));
+                            spawn(run_enrichment(
+                                db.clone(),
+                                enrichment_state,
+                                res.new_book_ids,
+                            ));
                         }
                         phase.set(Phase::Done);
                     }
