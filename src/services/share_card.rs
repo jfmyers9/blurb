@@ -61,7 +61,9 @@ pub fn generate_card(data: &ShareCardData) -> Result<Vec<u8>> {
 }
 
 fn render_svg_to_png(svg: &str) -> Result<Vec<u8>> {
-    let tree = resvg::usvg::Tree::from_str(svg, &resvg::usvg::Options::default())?;
+    let mut opt = resvg::usvg::Options::default();
+    opt.fontdb_mut().load_system_fonts();
+    let tree = resvg::usvg::Tree::from_str(svg, &opt)?;
     let size = tree.size();
     let mut pixmap = tiny_skia::Pixmap::new(size.width() as u32, size.height() as u32).unwrap();
     resvg::render(&tree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
