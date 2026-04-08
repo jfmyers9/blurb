@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use dioxus::prelude::*;
 use tracing::error;
 
@@ -9,6 +11,7 @@ use crate::data::commands::{
 };
 use crate::data::models::{Book, DiaryEntry, Highlight, Shelf};
 use crate::services::metadata;
+use crate::services::share_card::{copy_card_to_clipboard, generate_card, ShareCardData};
 use crate::DatabaseHandle;
 
 use super::diary_entry_form::DiaryEntryForm;
@@ -39,6 +42,9 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
     let mut author = use_signal(String::new);
     let mut confirm_delete = use_signal(|| false);
     let mut enriching = use_signal(|| false);
+
+    let mut share_copied = use_signal(|| false);
+    let mut share_saving = use_signal(|| false);
 
     let mut show_diary_form = use_signal(|| false);
     let mut editing_diary_entry: Signal<Option<DiaryEntry>> = use_signal(|| None);
@@ -117,6 +123,13 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                 p { class: "text-gray-500", "Loading..." }
             }
         };
+    };
+
+    let card_data = ShareCardData::Book {
+        title: bk.title.clone(),
+        author: bk.author.clone().unwrap_or_default(),
+        rating: bk.rating,
+        cover_image_source: bk.cover_url.clone(),
     };
 
     rsx! {
@@ -1038,6 +1051,71 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                                 "{pages}"
                             }
                         }
+                    }
+                }
+
+                // Share Card
+                div {
+                    class: "flex justify-center gap-2",
+                    button {
+                        r#type: "button",
+                        onclick: {
+                            let card_data = card_data.clone();
+                            move |_| {
+                                let card_data = card_data.clone();
+                                share_copied.set(false);
+                                spawn(async move {
+                                    let result = tokio::task::spawn_blocking(move || {
+                                        copy_card_to_clipboard(&card_data)
+                                    }).await;
+                                    match result {
+                                        Ok(Ok(())) => {
+                                            share_copied.set(true);
+                                            spawn(async move {
+                                                tokio::time::sleep(Duration::from_millis(1500)).await;
+                                                share_copied.set(false);
+                                            });
+                                        }
+                                        Ok(Err(err)) => tracing::warn!("Failed to generate share card: {err}"),
+                                        Err(err) => tracing::warn!("Share card task panicked: {err}"),
+                                    }
+                                });
+                            }
+                        },
+                        class: "rounded-md bg-amber-600/10 px-3 py-1.5 text-xs font-medium
+                            text-amber-600 hover:bg-amber-600/20
+                            dark:text-amber-400 dark:hover:bg-amber-600/20",
+                        if *share_copied.read() { "Copied!" } else { "Share Card" }
+                    }
+                    button {
+                        r#type: "button",
+                        onclick: {
+                            let card_data = card_data.clone();
+                            let book_id = bk.id;
+                            move |_| {
+                                let card_data = card_data.clone();
+                                share_saving.set(true);
+                                spawn(async move {
+                                    let result = tokio::task::spawn_blocking(move || {
+                                        let png_bytes = generate_card(&card_data)?;
+                                        let path = std::env::temp_dir().join(format!("blurb-card-{book_id}.png"));
+                                        std::fs::write(&path, &png_bytes)?;
+                                        opener::open(&path)?;
+                                        Ok::<(), anyhow::Error>(())
+                                    }).await;
+                                    share_saving.set(false);
+                                    match result {
+                                        Ok(Ok(())) => {}
+                                        Ok(Err(err)) => tracing::warn!("Save card error: {err}"),
+                                        Err(err) => tracing::warn!("Save card task panicked: {err}"),
+                                    }
+                                });
+                            }
+                        },
+                        class: "rounded-md bg-gray-600/10 px-3 py-1.5 text-xs font-medium
+                            text-gray-600 hover:bg-gray-600/20
+                            dark:text-gray-400 dark:hover:bg-gray-600/20",
+                        if *share_saving.read() { "Saving..." } else { "Save Card" }
                     }
                 }
 
