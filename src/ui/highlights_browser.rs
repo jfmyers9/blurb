@@ -184,6 +184,7 @@ pub fn HighlightsBrowser(props: HighlightsBrowserProps) -> Element {
                             let share_text = full_text.clone();
                             let share_title = title.clone();
                             let share_author = author.clone().unwrap_or_default();
+                            let book_rating = highlight.book_rating;
 
                             rsx! {
                                 div {
@@ -240,7 +241,7 @@ pub fn HighlightsBrowser(props: HighlightsBrowserProps) -> Element {
                                                         quote,
                                                         book_title,
                                                         author,
-                                                        rating: None,
+                                                        rating: book_rating,
                                                     };
                                                     let name = format!("highlight-{hid}");
                                                     let result = tokio::task::spawn_blocking(move || {

@@ -1,6 +1,20 @@
 use super::*;
 
 #[test]
+fn card_renders_at_3x_resolution() {
+    let data = ShareCardData::Book {
+        title: "Test".to_string(),
+        author: "Author".to_string(),
+        rating: None,
+        cover_image_source: None,
+    };
+    let png = generate_card(&data).expect("should generate PNG");
+    let img = image::load_from_memory(&png).expect("should decode PNG");
+    assert_eq!(img.width(), 1200);
+    assert_eq!(img.height(), 1800);
+}
+
+#[test]
 fn book_card_with_fallback_cover_produces_valid_png() {
     let data = ShareCardData::Book {
         title: "The Great Gatsby".to_string(),
