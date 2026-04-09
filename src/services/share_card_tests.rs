@@ -1,12 +1,28 @@
 use super::*;
 
 #[test]
+fn card_renders_at_3x_resolution() {
+    let data = ShareCardData::Book {
+        title: "Test".to_string(),
+        author: "Author".to_string(),
+        rating: None,
+        cover_image_source: None,
+        book_url: None,
+    };
+    let png = generate_card(&data).expect("should generate PNG");
+    let img = image::load_from_memory(&png).expect("should decode PNG");
+    assert_eq!(img.width(), 1200);
+    assert_eq!(img.height(), 1800);
+}
+
+#[test]
 fn book_card_with_fallback_cover_produces_valid_png() {
     let data = ShareCardData::Book {
         title: "The Great Gatsby".to_string(),
         author: "F. Scott Fitzgerald".to_string(),
         rating: Some(4),
         cover_image_source: None,
+        book_url: None,
     };
     let png = generate_card(&data).expect("should generate PNG");
     assert!(png.len() > 100);
@@ -65,6 +81,7 @@ fn book_card_escapes_xml_in_title() {
         author: "Author".to_string(),
         rating: None,
         cover_image_source: None,
+        book_url: None,
     };
     let png = generate_card(&data).expect("should generate PNG with special chars");
     assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
@@ -78,6 +95,7 @@ fn book_card_long_title_wraps_without_overflow() {
         author: "Author Name".to_string(),
         rating: Some(3),
         cover_image_source: None,
+        book_url: None,
     };
     let png = generate_card(&data).expect("should generate PNG for long title");
     assert!(png.len() > 100);

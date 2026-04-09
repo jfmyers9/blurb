@@ -705,6 +705,7 @@ fn map_highlight_row(row: &rusqlite::Row) -> rusqlite::Result<HighlightSearchRes
         created_at: row.get(8)?,
         book_title: row.get(9)?,
         book_author: row.get(10)?,
+        book_rating: row.get(11)?,
     })
 }
 
@@ -719,8 +720,9 @@ pub fn search_highlights_db(
     let mut stmt = conn
         .prepare(
             "SELECT h.id, h.book_id, h.text, h.location_start, h.location_end, h.page, \
-             h.clip_type, h.clipped_at, h.created_at, b.title, b.author \
+             h.clip_type, h.clipped_at, h.created_at, b.title, b.author, r.score \
              FROM highlights h JOIN books b ON h.book_id = b.id \
+             LEFT JOIN ratings r ON r.book_id = h.book_id \
              WHERE h.text LIKE '%' || ?1 || '%' ESCAPE '\\' \
              ORDER BY h.clipped_at DESC LIMIT 20",
         )
@@ -741,8 +743,9 @@ pub fn list_all_highlights_db(
     let mut stmt = conn
         .prepare(
             "SELECT h.id, h.book_id, h.text, h.location_start, h.location_end, h.page, \
-             h.clip_type, h.clipped_at, h.created_at, b.title, b.author \
+             h.clip_type, h.clipped_at, h.created_at, b.title, b.author, r.score \
              FROM highlights h JOIN books b ON h.book_id = b.id \
+             LEFT JOIN ratings r ON r.book_id = h.book_id \
              ORDER BY h.clipped_at DESC",
         )
         .map_err(|e| e.to_string())?;

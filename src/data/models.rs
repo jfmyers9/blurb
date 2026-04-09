@@ -67,4 +67,5 @@ pub struct HighlightSearchResult {
     pub created_at: String,
     pub book_title: String,
     pub book_author: Option<String>,
+    pub book_rating: Option<i32>,
 }

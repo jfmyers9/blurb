@@ -10,6 +10,7 @@ mod tests;
 
 const CARD_WIDTH: u32 = 400;
 const CARD_HEIGHT: u32 = 600;
+const SCALE_FACTOR: u32 = 3;
 
 // Star path from ui/rating_stars.rs (viewBox 0 0 20 20)
 const STAR_PATH: &str = "M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z";
@@ -21,6 +22,7 @@ pub enum ShareCardData {
         author: String,
         rating: Option<i32>,
         cover_image_source: Option<String>,
+        book_url: Option<String>,
     },
     Highlight {
         quote: String,
@@ -106,7 +108,14 @@ pub fn generate_card(data: &ShareCardData) -> Result<Vec<u8>> {
             author,
             rating,
             cover_image_source,
-        } => build_book_svg(title, author, *rating, cover_image_source.as_deref()),
+            book_url,
+        } => build_book_svg(
+            title,
+            author,
+            *rating,
+            cover_image_source.as_deref(),
+            book_url.as_deref(),
+        ),
         ShareCardData::Highlight {
             quote,
             book_title,
@@ -118,13 +127,94 @@ pub fn generate_card(data: &ShareCardData) -> Result<Vec<u8>> {
     render_svg_to_png(&svg)
 }
 
+fn bundled_fonts_dir() -> Option<PathBuf> {
+    // Tauri macOS bundle: <exe>/../Resources/assets/fonts/
+    if let Some(dir) = std::env::current_exe().ok().and_then(|p| {
+        p.parent()?
+            .parent()
+            .map(|p| p.join("Resources/assets/fonts"))
+    }) {
+        if dir.is_dir() {
+            return Some(dir);
+        }
+    }
+    // Dev: CARGO_MANIFEST_DIR/assets/fonts/
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/fonts");
+    if dir.is_dir() {
+        return Some(dir);
+    }
+    None
+}
+
+fn load_app_icon() -> Option<String> {
+    // Tauri macOS bundle: <exe>/../Resources/assets/icons/32x32.png
+    let paths = [
+        std::env::current_exe()
+            .ok()
+            .and_then(|p| {
+                p.parent()?
+                    .parent()
+                    .map(|p| p.join("Resources/assets/icons/32x32.png"))
+            })
+            .unwrap_or_default(),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/icons/32x32.png"),
+    ];
+    for path in &paths {
+        if let Ok(bytes) = std::fs::read(path) {
+            let b64 = STANDARD.encode(&bytes);
+            return Some(format!("data:image/png;base64,{b64}"));
+        }
+    }
+    None
+}
+
+fn branded_footer(icon_data_uri: Option<&str>) -> String {
+    let separator = r#"<line x1="100" y1="545" x2="300" y2="545" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>"#;
+    match icon_data_uri {
+        Some(uri) => {
+            // Icon (20x20) + 8px gap + "Blurb" text (~42px wide) ≈ 70px total
+            // Center at x=200: icon starts at 165, text at 193
+            format!(
+                r#"{separator}
+    <image x="165" y="556" width="20" height="20" href="{uri}" preserveAspectRatio="xMidYMid meet"/>
+    <text x="193" y="572" font-family="Inter, sans-serif" font-size="16" font-weight="bold" fill="white">Blurb</text>"#
+            )
+        }
+        None => {
+            format!(
+                r#"{separator}
+    <text x="200" y="572" text-anchor="middle" font-family="Inter, sans-serif" font-size="16" font-weight="bold" fill="white">Blurb</text>"#
+            )
+        }
+    }
+}
+
 fn render_svg_to_png(svg: &str) -> Result<Vec<u8>> {
     let mut opt = resvg::usvg::Options::default();
     opt.fontdb_mut().load_system_fonts();
+    if let Some(fonts_dir) = bundled_fonts_dir() {
+        for name in [
+            "Inter-Regular.ttf",
+            "Inter-Bold.ttf",
+            "SourceSerif4-Regular.ttf",
+            "SourceSerif4-It.ttf",
+        ] {
+            let _ = opt.fontdb_mut().load_font_file(fonts_dir.join(name));
+        }
+    }
     let tree = resvg::usvg::Tree::from_str(svg, &opt)?;
     let size = tree.size();
-    let mut pixmap = tiny_skia::Pixmap::new(size.width() as u32, size.height() as u32).unwrap();
-    resvg::render(&tree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
+    let mut pixmap = tiny_skia::Pixmap::new(
+        size.width() as u32 * SCALE_FACTOR,
+        size.height() as u32 * SCALE_FACTOR,
+    )
+    .unwrap();
+    let scale = SCALE_FACTOR as f32;
+    resvg::render(
+        &tree,
+        tiny_skia::Transform::from_scale(scale, scale),
+        &mut pixmap.as_mut(),
+    );
     Ok(pixmap.encode_png()?)
 }
 
@@ -133,21 +223,37 @@ fn build_book_svg(
     author: &str,
     rating: Option<i32>,
     cover_source: Option<&str>,
+    book_url: Option<&str>,
 ) -> String {
+    let icon_uri = load_app_icon();
+    let footer = branded_footer(icon_uri.as_deref());
+    let url_element = book_url
+        .map(|url| {
+            format!(
+                r##"<text x="200" y="590" text-anchor="middle" font-family="Inter, sans-serif" font-size="10" fill="#a0aec0">{}</text>"##,
+                escape_xml(url)
+            )
+        })
+        .unwrap_or_default();
+    let mut y = 30.0;
+
+    let cover_y = y;
     let cover_element = match cover_source.and_then(load_cover_image) {
         Some(data_uri) => format!(
-            r#"<image x="120" y="30" width="160" height="240" href="{}" preserveAspectRatio="xMidYMid meet"/>"#,
-            data_uri
+            r#"<rect x="118" y="{shadow_y}" width="164" height="244" rx="4" fill="black" opacity="0.3" filter="url(#coverShadow)"/>
+  <image x="120" y="{cover_y}" width="160" height="240" href="{data_uri}" preserveAspectRatio="xMidYMid meet"/>"#,
+            shadow_y = cover_y + 2.0,
         ),
-        None => cover_fallback(title),
+        None => cover_fallback(title, cover_y),
     };
+    y += 240.0 + 30.0;
 
     let title_lines = word_wrap(title, 25);
     let title_line_height = 26.0;
-    let title_base_y = 310.0;
+    let title_base_y = y;
     let title_element = if title_lines.len() == 1 {
         format!(
-            r#"<text x="200" y="{title_base_y}" text-anchor="middle" font-family="sans-serif" font-size="22" font-weight="bold" fill="white">{}</text>"#,
+            r#"<text x="200" y="{title_base_y}" text-anchor="middle" font-family="Inter, sans-serif" font-size="22" font-weight="bold" fill="white">{}</text>"#,
             escape_xml(&title_lines[0])
         )
     } else {
@@ -155,24 +261,28 @@ fn build_book_svg(
             .iter()
             .enumerate()
             .map(|(i, line)| {
-                let y = title_base_y + (i as f64 * title_line_height);
-                format!(r#"<tspan x="200" y="{y}">{}</tspan>"#, escape_xml(line))
+                let ty = title_base_y + (i as f64 * title_line_height);
+                format!(r#"<tspan x="200" y="{ty}">{}</tspan>"#, escape_xml(line))
             })
             .collect::<Vec<_>>()
             .join("\n    ");
         format!(
-            r#"<text text-anchor="middle" font-family="sans-serif" font-size="22" font-weight="bold" fill="white">
+            r#"<text text-anchor="middle" font-family="Inter, sans-serif" font-size="22" font-weight="bold" fill="white">
     {tspans}
   </text>"#
         )
     };
+    y += (title_lines.len() as f64 - 1.0) * title_line_height + 30.0;
 
-    let extra_lines = (title_lines.len() as f64 - 1.0) * title_line_height;
-    let author_y = 340.0 + extra_lines;
+    let author_y = y;
     let author_escaped = escape_xml(author);
+    y += 40.0;
 
     let rating_svg = rating
-        .map(|r| render_stars(r, 200.0, 460.0 + extra_lines))
+        .map(|r| {
+            let ry = y;
+            render_stars(r, 200.0, ry)
+        })
         .unwrap_or_default();
 
     format!(
@@ -180,15 +290,31 @@ fn build_book_svg(
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#0f1b3d"/>
+      <stop offset="45%" stop-color="#162244"/>
       <stop offset="100%" stop-color="#1a1a2e"/>
     </linearGradient>
+    <clipPath id="cardClip">
+      <rect width="{CARD_WIDTH}" height="{CARD_HEIGHT}" rx="16"/>
+    </clipPath>
+    <filter id="coverShadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="6"/>
+      <feOffset dy="3" result="shadow"/>
+      <feMerge>
+        <feMergeNode in="shadow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
   </defs>
-  <rect width="{CARD_WIDTH}" height="{CARD_HEIGHT}" fill="url(#bg)"/>
-  {cover_element}
-  {title_element}
-  <text x="200" y="{author_y}" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#a0aec0">{author_escaped}</text>
-  {rating_svg}
-  <text x="200" y="575" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#4a5568" opacity="0.6">Blurb</text>
+  <g clip-path="url(#cardClip)">
+    <rect width="{CARD_WIDTH}" height="{CARD_HEIGHT}" fill="url(#bg)"/>
+    {cover_element}
+    {title_element}
+    <text x="200" y="{author_y}" text-anchor="middle" font-family="Inter, sans-serif" font-size="16" fill="#a0aec0">{author_escaped}</text>
+    {rating_svg}
+    {footer}
+    {url_element}
+  </g>
+  <rect width="{CARD_WIDTH}" height="{CARD_HEIGHT}" rx="16" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
 </svg>"##
     )
 }
@@ -204,67 +330,84 @@ fn clamp_lines(mut lines: Vec<String>, max: usize) -> Vec<String> {
 }
 
 fn build_highlight_svg(quote: &str, book_title: &str, author: &str, rating: Option<i32>) -> String {
+    let icon_uri = load_app_icon();
+    let footer = branded_footer(icon_uri.as_deref());
     let lines = clamp_lines(word_wrap(quote, 35), 12);
-    let start_y = 120.0;
     let line_height = 28.0;
+
+    let mut y = 60.0;
+
+    let open_quote_y = y;
+    y += 40.0;
+
+    let start_y = y;
     let tspans: String = lines
         .iter()
         .enumerate()
         .map(|(i, line)| {
-            let y = start_y + (i as f64 * line_height);
-            format!(r#"<tspan x="200" y="{y}">{}</tspan>"#, escape_xml(line))
+            let ty = start_y + (i as f64 * line_height);
+            format!(r#"<tspan x="200" y="{ty}">{}</tspan>"#, escape_xml(line))
         })
         .collect::<Vec<_>>()
         .join("\n    ");
+    y += lines.len() as f64 * line_height + 10.0;
 
-    let quote_bottom = start_y + (lines.len() as f64 * line_height) + 20.0;
-    let title_y = quote_bottom + 30.0;
-    let author_y = title_y + 28.0;
-    let rating_y = author_y + 30.0;
+    let close_quote_y = y;
+    y += 40.0;
+
+    let title_y = y;
+    y += 28.0;
+
+    let author_y = y;
+    y += 30.0;
 
     let title_escaped = escape_xml(book_title);
     let author_escaped = escape_xml(author);
 
     let rating_svg = rating
-        .map(|r| render_stars(r, 200.0, rating_y))
+        .map(|r| render_stars(r, 200.0, y))
         .unwrap_or_default();
-
-    // Open/close quote marks positioned around the quote block
-    let open_quote_y = start_y - 30.0;
-    let close_quote_y = quote_bottom - 10.0;
 
     format!(
         r##"<svg xmlns="http://www.w3.org/2000/svg" width="{CARD_WIDTH}" height="{CARD_HEIGHT}">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#0f1b3d"/>
+      <stop offset="45%" stop-color="#162244"/>
       <stop offset="100%" stop-color="#1a1a2e"/>
     </linearGradient>
+    <clipPath id="cardClip">
+      <rect width="{CARD_WIDTH}" height="{CARD_HEIGHT}" rx="16"/>
+    </clipPath>
   </defs>
-  <rect width="{CARD_WIDTH}" height="{CARD_HEIGHT}" fill="url(#bg)"/>
-  <text x="40" y="{open_quote_y}" font-family="serif" font-size="60" fill="#4a5568" opacity="0.4">&#x201C;</text>
-  <text text-anchor="middle" font-family="serif" font-size="18" fill="#e2e8f0" font-style="italic">
-    {tspans}
-  </text>
-  <text x="360" y="{close_quote_y}" font-family="serif" font-size="60" fill="#4a5568" opacity="0.4">&#x201D;</text>
-  <text x="200" y="{title_y}" text-anchor="middle" font-family="sans-serif" font-size="16" font-weight="bold" fill="white">{title_escaped}</text>
-  <text x="200" y="{author_y}" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#a0aec0">{author_escaped}</text>
-  {rating_svg}
-  <text x="200" y="575" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#4a5568" opacity="0.6">Blurb</text>
+  <g clip-path="url(#cardClip)">
+    <rect width="{CARD_WIDTH}" height="{CARD_HEIGHT}" fill="url(#bg)"/>
+    <text x="40" y="{open_quote_y}" font-family="Source Serif 4, serif" font-size="60" fill="#6b7fa3" opacity="0.5">&#x201C;</text>
+    <text text-anchor="middle" font-family="Source Serif 4, serif" font-size="18" fill="#e2e8f0" font-style="italic">
+      {tspans}
+    </text>
+    <text x="360" y="{close_quote_y}" font-family="Source Serif 4, serif" font-size="60" fill="#6b7fa3" opacity="0.5">&#x201D;</text>
+    <text x="200" y="{title_y}" text-anchor="middle" font-family="Inter, sans-serif" font-size="16" font-weight="bold" fill="white">{title_escaped}</text>
+    <text x="200" y="{author_y}" text-anchor="middle" font-family="Inter, sans-serif" font-size="14" fill="#a0aec0">{author_escaped}</text>
+    {rating_svg}
+    {footer}
+  </g>
+  <rect width="{CARD_WIDTH}" height="{CARD_HEIGHT}" rx="16" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
 </svg>"##
     )
 }
 
-fn cover_fallback(title: &str) -> String {
+fn cover_fallback(title: &str, y: f64) -> String {
     let letter = title
         .chars()
         .next()
         .unwrap_or('?')
         .to_uppercase()
         .to_string();
+    let text_y = y + 145.0;
     format!(
-        r##"<rect x="120" y="30" width="160" height="240" rx="8" fill="#2d3748"/>
-  <text x="200" y="175" text-anchor="middle" font-family="sans-serif" font-size="72" font-weight="bold" fill="white">{letter}</text>"##
+        r##"<rect x="120" y="{y}" width="160" height="240" rx="8" fill="#2d3748"/>
+  <text x="200" y="{text_y}" text-anchor="middle" font-family="Inter, sans-serif" font-size="72" font-weight="bold" fill="white">{letter}</text>"##
     )
 }
 
