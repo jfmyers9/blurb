@@ -11,7 +11,7 @@ use crate::data::commands::{
 };
 use crate::data::models::{Book, DiaryEntry, Highlight, Shelf};
 use crate::services::metadata;
-use crate::services::share_card::{copy_card_to_clipboard, generate_card, ShareCardData};
+use crate::services::share_card::{copy_card_to_clipboard, open_share_sheet, ShareCardData};
 use crate::DatabaseHandle;
 
 use super::diary_entry_form::DiaryEntryForm;
@@ -44,7 +44,6 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
     let mut enriching = use_signal(|| false);
 
     let mut share_copied = use_signal(|| false);
-    let mut share_saving = use_signal(|| false);
 
     let mut show_diary_form = use_signal(|| false);
     let mut editing_diary_entry: Signal<Option<DiaryEntry>> = use_signal(|| None);
@@ -1061,6 +1060,31 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                         r#type: "button",
                         onclick: {
                             let card_data = card_data.clone();
+                            let book_id = bk.id;
+                            move |_| {
+                                let card_data = card_data.clone();
+                                spawn(async move {
+                                    let name = format!("card-{book_id}");
+                                    let result = tokio::task::spawn_blocking(move || {
+                                        open_share_sheet(&card_data, &name)
+                                    }).await;
+                                    match result {
+                                        Ok(Ok(())) => {}
+                                        Ok(Err(err)) => tracing::warn!("Share card error: {err}"),
+                                        Err(err) => tracing::warn!("Share card task panicked: {err}"),
+                                    }
+                                });
+                            }
+                        },
+                        class: "rounded-md bg-amber-600/10 px-3 py-1.5 text-xs font-medium
+                            text-amber-600 hover:bg-amber-600/20
+                            dark:text-amber-400 dark:hover:bg-amber-600/20",
+                        "Share Card"
+                    }
+                    button {
+                        r#type: "button",
+                        onclick: {
+                            let card_data = card_data.clone();
                             move |_| {
                                 let card_data = card_data.clone();
                                 share_copied.set(false);
@@ -1076,38 +1100,8 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                                                 share_copied.set(false);
                                             });
                                         }
-                                        Ok(Err(err)) => tracing::warn!("Failed to generate share card: {err}"),
-                                        Err(err) => tracing::warn!("Share card task panicked: {err}"),
-                                    }
-                                });
-                            }
-                        },
-                        class: "rounded-md bg-amber-600/10 px-3 py-1.5 text-xs font-medium
-                            text-amber-600 hover:bg-amber-600/20
-                            dark:text-amber-400 dark:hover:bg-amber-600/20",
-                        if *share_copied.read() { "Copied!" } else { "Share Card" }
-                    }
-                    button {
-                        r#type: "button",
-                        onclick: {
-                            let card_data = card_data.clone();
-                            let book_id = bk.id;
-                            move |_| {
-                                let card_data = card_data.clone();
-                                share_saving.set(true);
-                                spawn(async move {
-                                    let result = tokio::task::spawn_blocking(move || {
-                                        let png_bytes = generate_card(&card_data)?;
-                                        let path = std::env::temp_dir().join(format!("blurb-card-{book_id}.png"));
-                                        std::fs::write(&path, &png_bytes)?;
-                                        opener::open(&path)?;
-                                        Ok::<(), anyhow::Error>(())
-                                    }).await;
-                                    share_saving.set(false);
-                                    match result {
-                                        Ok(Ok(())) => {}
-                                        Ok(Err(err)) => tracing::warn!("Save card error: {err}"),
-                                        Err(err) => tracing::warn!("Save card task panicked: {err}"),
+                                        Ok(Err(err)) => tracing::warn!("Copy card error: {err}"),
+                                        Err(err) => tracing::warn!("Copy card task panicked: {err}"),
                                     }
                                 });
                             }
@@ -1115,7 +1109,7 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                         class: "rounded-md bg-gray-600/10 px-3 py-1.5 text-xs font-medium
                             text-gray-600 hover:bg-gray-600/20
                             dark:text-gray-400 dark:hover:bg-gray-600/20",
-                        if *share_saving.read() { "Saving..." } else { "Save Card" }
+                        if *share_copied.read() { "Copied!" } else { "Copy" }
                     }
                 }
 

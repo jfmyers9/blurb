@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 
 use crate::data::commands::list_all_highlights_db;
 use crate::data::models::HighlightSearchResult;
-use crate::services::share_card::{copy_card_to_clipboard, generate_card, ShareCardData};
+use crate::services::share_card::{open_share_sheet, ShareCardData};
 use crate::DatabaseHandle;
 
 fn truncate_text(text: &str, max_len: usize) -> String {
@@ -36,8 +36,6 @@ pub fn HighlightsBrowser(props: HighlightsBrowserProps) -> Element {
     let mut search_query = use_signal(String::new);
     let mut active_clip_type: Signal<Option<String>> = use_signal(|| None);
     let mut copied_id: Signal<Option<i64>> = use_signal(|| None);
-    let mut shared_id: Signal<Option<i64>> = use_signal(|| None);
-    let mut saving_id: Signal<Option<i64>> = use_signal(|| None);
 
     {
         let db = db.clone();
@@ -183,14 +181,9 @@ pub fn HighlightsBrowser(props: HighlightsBrowserProps) -> Element {
                             let loc_start = highlight.location_start;
                             let loc_end = highlight.location_end;
                             let is_copied = *copied_id.read() == Some(hid);
-                            let is_shared = *shared_id.read() == Some(hid);
-                            let is_saving = *saving_id.read() == Some(hid);
                             let share_text = full_text.clone();
                             let share_title = title.clone();
                             let share_author = author.clone().unwrap_or_default();
-                            let save_text = share_text.clone();
-                            let save_title = share_title.clone();
-                            let save_author = share_author.clone();
 
                             rsx! {
                                 div {
@@ -249,60 +242,19 @@ pub fn HighlightsBrowser(props: HighlightsBrowserProps) -> Element {
                                                         author,
                                                         rating: None,
                                                     };
+                                                    let name = format!("highlight-{hid}");
                                                     let result = tokio::task::spawn_blocking(move || {
-                                                        copy_card_to_clipboard(&data)
+                                                        open_share_sheet(&data, &name)
                                                     })
                                                     .await;
                                                     match result {
-                                                        Ok(Ok(())) => {
-                                                            shared_id.set(Some(hid));
-                                                            tokio::time::sleep(Duration::from_millis(1500)).await;
-                                                            if *shared_id.read() == Some(hid) {
-                                                                shared_id.set(None);
-                                                            }
-                                                        }
+                                                        Ok(Ok(())) => {}
                                                         Ok(Err(err)) => tracing::warn!("Share card error: {err}"),
                                                         Err(err) => tracing::warn!("Share card task error: {err}"),
                                                     }
                                                 });
                                             },
-                                            if is_shared { "Shared!" } else { "Share" }
-                                        }
-                                        button {
-                                            r#type: "button",
-                                            class: "flex-shrink-0 rounded px-2 py-1 text-xs text-gray-400
-                                                hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-300
-                                                dark:hover:bg-gray-800 transition",
-                                            onclick: move |e: Event<MouseData>| {
-                                                e.stop_propagation();
-                                                let quote = save_text.clone();
-                                                let book_title = save_title.clone();
-                                                let author = save_author.clone();
-                                                saving_id.set(Some(hid));
-                                                spawn(async move {
-                                                    let result = tokio::task::spawn_blocking(move || {
-                                                        let data = ShareCardData::Highlight {
-                                                            quote,
-                                                            book_title,
-                                                            author,
-                                                            rating: None,
-                                                        };
-                                                        let png_bytes = generate_card(&data)?;
-                                                        let path = std::env::temp_dir().join(format!("blurb-highlight-{hid}.png"));
-                                                        std::fs::write(&path, &png_bytes)?;
-                                                        opener::open(&path)?;
-                                                        Ok::<(), anyhow::Error>(())
-                                                    })
-                                                    .await;
-                                                    saving_id.set(None);
-                                                    match result {
-                                                        Ok(Ok(())) => {}
-                                                        Ok(Err(err)) => tracing::warn!("Save card error: {err}"),
-                                                        Err(err) => tracing::warn!("Save card task panicked: {err}"),
-                                                    }
-                                                });
-                                            },
-                                            if is_saving { "Saving..." } else { "Save" }
+                                            "Share"
                                         }
                                     }
 

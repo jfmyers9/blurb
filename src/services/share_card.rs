@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::path::PathBuf;
 
 use anyhow::Result;
 use base64::{engine::general_purpose::STANDARD, Engine};
@@ -27,6 +28,63 @@ pub enum ShareCardData {
         author: String,
         rating: Option<i32>,
     },
+}
+
+pub fn save_card_to_file(data: &ShareCardData, name: &str) -> Result<PathBuf> {
+    let png_bytes = generate_card(data)?;
+    let path = std::env::temp_dir().join(format!("blurb-{name}.png"));
+    std::fs::write(&path, &png_bytes)?;
+    Ok(path)
+}
+
+pub fn open_share_sheet(data: &ShareCardData, name: &str) -> Result<()> {
+    let path = save_card_to_file(data, name)?;
+    show_share_sheet(path);
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn show_share_sheet(path: PathBuf) {
+    use objc2::rc::Retained;
+    use objc2::{AnyThread, MainThreadMarker};
+    use objc2_app_kit::{NSApplication, NSSharingServicePicker};
+    use objc2_foundation::{NSArray, NSString, NSURL};
+
+    let path_str = path.to_string_lossy().to_string();
+
+    dispatch::Queue::main().exec_async(move || {
+        // Safety: we're on the main thread via dispatch::Queue::main()
+        let mtm = unsafe { MainThreadMarker::new_unchecked() };
+
+        let ns_path = NSString::from_str(&path_str);
+        let url = NSURL::fileURLWithPath(&ns_path);
+        let items: Retained<NSArray> = NSArray::from_retained_slice(&[url.into()]);
+        let picker = unsafe {
+            NSSharingServicePicker::initWithItems(NSSharingServicePicker::alloc(), &items)
+        };
+
+        let app = NSApplication::sharedApplication(mtm);
+        if let Some(window) = app.keyWindow() {
+            if let Some(view) = window.contentView() {
+                let frame = view.frame();
+                // Anchor near center-bottom of the window
+                let rect = objc2_foundation::NSRect::new(
+                    objc2_foundation::NSPoint::new(frame.size.width / 2.0, 0.0),
+                    objc2_foundation::NSSize::new(1.0, 1.0),
+                );
+                picker.showRelativeToRect_ofView_preferredEdge(
+                    rect,
+                    &view,
+                    objc2_foundation::NSRectEdge::MinY,
+                );
+            }
+        }
+    });
+}
+
+#[cfg(not(target_os = "macos"))]
+fn show_share_sheet(path: PathBuf) {
+    let _ = opener::open(&path);
 }
 
 pub fn copy_card_to_clipboard(data: &ShareCardData) -> Result<()> {
