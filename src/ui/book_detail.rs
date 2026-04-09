@@ -129,7 +129,6 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
         author: bk.author.clone().unwrap_or_default(),
         rating: bk.rating,
         cover_image_source: bk.cover_url.clone(),
-        book_url: None,
     };
 
     rsx! {
