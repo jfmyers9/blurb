@@ -1412,3 +1412,66 @@ fn test_list_all_highlights_db_null_optional_fields() {
     assert_eq!(results[0].location_start, None);
     assert_eq!(results[0].location_end, None);
 }
+
+#[test]
+fn test_upload_cover_uses_supplied_covers_dir() {
+    let conn = test_conn();
+    let book_id = add_book_db(
+        &conn,
+        "Cover Book",
+        Some("Author"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    let temp = tempfile::TempDir::new().unwrap();
+    let source = temp.path().join("source.jpg");
+    let dev_covers = temp.path().join("dev-covers");
+    let prod_covers = temp.path().join("prod-covers");
+    std::fs::create_dir_all(&prod_covers).unwrap();
+    std::fs::write(&source, b"fake image").unwrap();
+
+    let cover_url = upload_cover_db(&conn, book_id, source.to_str().unwrap(), &dev_covers).unwrap();
+
+    assert_eq!(
+        cover_url,
+        dev_covers.join(format!("{book_id}.jpg")).to_string_lossy()
+    );
+    assert!(dev_covers.join(format!("{book_id}.jpg")).exists());
+    assert!(!prod_covers.join(format!("{book_id}.jpg")).exists());
+}
+
+#[test]
+fn test_delete_book_with_covers_uses_supplied_covers_dir() {
+    let conn = test_conn();
+    let book_id = add_book_db(
+        &conn,
+        "Delete Cover Book",
+        Some("Author"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    let temp = tempfile::TempDir::new().unwrap();
+    let dev_covers = temp.path().join("dev-covers");
+    let prod_covers = temp.path().join("prod-covers");
+    std::fs::create_dir_all(&dev_covers).unwrap();
+    std::fs::create_dir_all(&prod_covers).unwrap();
+    std::fs::write(dev_covers.join(format!("{book_id}.jpg")), b"dev").unwrap();
+    std::fs::write(prod_covers.join(format!("{book_id}.jpg")), b"prod").unwrap();
+
+    delete_book_with_covers_db(&conn, book_id, &dev_covers).unwrap();
+
+    assert!(!dev_covers.join(format!("{book_id}.jpg")).exists());
+    assert!(prod_covers.join(format!("{book_id}.jpg")).exists());
+}
