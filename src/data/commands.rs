@@ -471,14 +471,15 @@ pub fn upload_cover_db(
     conn: &rusqlite::Connection,
     book_id: i64,
     source_path: &str,
+    covers_dir: &Path,
 ) -> Result<String, String> {
     let source = Path::new(source_path);
     let ext = source.extension().and_then(|e| e.to_str()).unwrap_or("jpg");
 
-    let covers_dir = crate::data::db::covers_dir()?;
+    fs::create_dir_all(covers_dir).map_err(|e| e.to_string())?;
 
     // Remove any existing cover for this book
-    if let Ok(entries) = fs::read_dir(&covers_dir) {
+    if let Ok(entries) = fs::read_dir(covers_dir) {
         for entry in entries.flatten() {
             let name = entry.file_name();
             let name_str = name.to_string_lossy();
@@ -501,19 +502,21 @@ pub fn upload_cover_db(
     Ok(dest_str)
 }
 
-pub fn delete_book_with_covers_db(conn: &rusqlite::Connection, id: i64) -> Result<(), String> {
+pub fn delete_book_with_covers_db(
+    conn: &rusqlite::Connection,
+    id: i64,
+    covers_dir: &Path,
+) -> Result<(), String> {
     delete_book_db(conn, id)?;
     info!(book_id = id, "book deleted");
 
-    if let Ok(covers_dir) = crate::data::db::covers_dir() {
-        if covers_dir.exists() {
-            if let Ok(entries) = fs::read_dir(&covers_dir) {
-                for entry in entries.flatten() {
-                    let name = entry.file_name();
-                    let name_str = name.to_string_lossy();
-                    if name_str.starts_with(&format!("{}.", id)) {
-                        let _ = fs::remove_file(entry.path());
-                    }
+    if covers_dir.exists() {
+        if let Ok(entries) = fs::read_dir(covers_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+                if name_str.starts_with(&format!("{}.", id)) {
+                    let _ = fs::remove_file(entry.path());
                 }
             }
         }

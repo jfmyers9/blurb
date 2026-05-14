@@ -7,7 +7,7 @@ use tracing::error;
 use crate::data::commands::{list_all_shelf_book_ids_db, list_books_db, list_shelves_db};
 use crate::data::models::{Book, DiaryEntry, Shelf};
 use crate::hooks::{use_library_filter, ViewMode};
-use crate::DatabaseHandle;
+use crate::{DatabaseHandle, RuntimeProfile};
 
 use super::add_book_form::AddBookForm;
 use super::book_detail::BookDetail;
@@ -34,6 +34,7 @@ enum AppView {
 pub fn App() -> Element {
     use_context_provider(EnrichmentState::new);
     let db = use_context::<DatabaseHandle>();
+    let profile = use_context::<RuntimeProfile>();
 
     let mut books: Signal<Vec<Book>> = use_signal(Vec::new);
     let mut shelves: Signal<Vec<Shelf>> = use_signal(Vec::new);
@@ -121,6 +122,13 @@ pub fn App() -> Element {
                     h1 {
                         class: "text-xl font-bold tracking-tight text-gray-900 dark:text-gray-100",
                         "Blurb"
+                    }
+                    if !profile.is_production {
+                        div {
+                            title: "Database: {profile.db_path}",
+                            class: "rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-amber-800 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-200",
+                            "{profile.label}"
+                        }
                     }
                     // View tabs
                     nav {

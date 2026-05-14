@@ -233,8 +233,9 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                                                         .await;
                                                     if let Some(file) = file {
                                                         let path = file.path().to_string_lossy().to_string();
+                                                        let covers_dir = db.paths.covers_dir.clone();
                                                         let conn = db.conn.lock().unwrap();
-                                                        if let Err(e) = upload_cover_db(&conn, book_id, &path) {
+                                                        if let Err(e) = upload_cover_db(&conn, book_id, &path, &covers_dir) {
                                                             error!("failed to upload cover for book {book_id}: {e}");
                                                         }
                                                         drop(conn);
@@ -1129,8 +1130,9 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                                 }
                                 let db = db.clone();
                                 spawn(async move {
+                                    let covers_dir = db.paths.covers_dir.clone();
                                     let conn = db.conn.lock().unwrap();
-                                    if let Err(e) = delete_book_with_covers_db(&conn, book_id) {
+                                    if let Err(e) = delete_book_with_covers_db(&conn, book_id, &covers_dir) {
                                         error!("failed to delete book {book_id}: {e}");
                                     }
                                     drop(conn);

@@ -123,10 +123,10 @@ pub fn KindleSync(props: KindleSyncProps) -> Element {
             error.set(None);
             let should_enrich = *enrich.read();
             spawn(async move {
-                let covers_dir = crate::data::db::covers_dir().ok();
+                let covers_dir = db.paths.covers_dir.clone();
                 let result = {
                     let mut conn = db.conn.lock().unwrap();
-                    import_kindle_books_db(&mut conn, &to_import, covers_dir.as_deref())
+                    import_kindle_books_db(&mut conn, &to_import, Some(&covers_dir))
                 };
                 match result {
                     Ok(ids) => {

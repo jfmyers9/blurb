@@ -16,13 +16,13 @@ A lightweight, local-first desktop app for managing your personal book library. 
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Framework | [Dioxus 0.7](https://dioxuslabs.com/) (desktop) |
-| Language | Rust |
-| Styling | Tailwind CSS |
-| Database | SQLite (via rusqlite, bundled) |
-| Build tooling | Dioxus CLI |
+| Layer         | Technology                                      |
+| ------------- | ----------------------------------------------- |
+| Framework     | [Dioxus 0.7](https://dioxuslabs.com/) (desktop) |
+| Language      | Rust                                            |
+| Styling       | Tailwind CSS                                    |
+| Database      | SQLite (via rusqlite, bundled)                  |
+| Build tooling | Dioxus CLI                                      |
 
 Fully Rust-native -- no JavaScript, no Node.js, no web server.
 
@@ -54,8 +54,8 @@ dx build --release
 
 Blurb writes structured logs to a daily rolling file:
 
-| OS | Log Location |
-|----|-------------|
+| OS    | Log Location                                        |
+| ----- | --------------------------------------------------- |
 | macOS | `~/Library/Logs/com.blurb.app/blurb.log.YYYY-MM-DD` |
 
 **Viewing logs:**
@@ -83,13 +83,44 @@ Default levels: `info` in release builds, `debug` in development.
 
 Blurb stores all data in a single SQLite file in your OS app data directory:
 
-| OS | Location |
-|----|----------|
-| macOS | `~/Library/Application Support/com.blurb.app/` |
-| Linux | `~/.local/share/com.blurb.app/` |
-| Windows | `%APPDATA%\com.blurb.app\` |
+| OS      | Location                                       |
+| ------- | ---------------------------------------------- |
+| macOS   | `~/Library/Application Support/com.blurb.app/` |
+| Linux   | `~/.local/share/com.blurb.app/`                |
+| Windows | `%APPDATA%\com.blurb.app\`                     |
 
 The database is a standard SQLite file -- you can inspect it directly with any SQLite client.
+
+## Development Database
+
+Use an isolated development profile when testing imports, reviews, cover uploads, or migrations without touching your personal library:
+
+```sh
+BLURB_PROFILE=dev dx serve
+# or
+scripts/dev-db.sh run
+```
+
+Development mode uses a separate app namespace and shows a visible **Dev** badge in the window:
+
+| Profile     | Data Location                                      | Log Location                        |
+| ----------- | -------------------------------------------------- | ----------------------------------- |
+| Production  | `~/Library/Application Support/com.blurb.app/`     | `~/Library/Logs/com.blurb.app/`     |
+| Development | `~/Library/Application Support/com.blurb.app.dev/` | `~/Library/Logs/com.blurb.app.dev/` |
+| Custom      | `BLURB_DATA_DIR=/path/to/sandbox`                  | `/path/to/sandbox/logs/`            |
+
+Useful commands:
+
+```sh
+scripts/dev-db.sh path          # print dev DB, covers, and log paths
+scripts/dev-db.sh seed          # create a small deterministic fixture library
+scripts/dev-db.sh clone-prod    # clone production DB + covers into dev (asks first)
+scripts/dev-db.sh reset         # delete dev DB/covers/logs (asks first)
+```
+
+`clone-prod` uses SQLite backup semantics and rewrites cloned cover paths from the production covers directory to the development covers directory. `reset` and `clone-prod` refuse to target the production namespace and require confirmation unless `--yes` is passed.
+
+Development imports are isolated from production data, but metadata enrichment can still call external book metadata services when enabled.
 
 ## Kindle Integration
 

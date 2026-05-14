@@ -143,3 +143,82 @@ fn test_backup_migrate_cleanup_flow() {
     let final_version = get_user_version(&conn).unwrap();
     assert_eq!(final_version, crate::data::migrations::latest_version());
 }
+
+#[test]
+fn resolves_production_profile_by_default() {
+    let paths = resolve_data_paths(None, None).unwrap();
+
+    assert_eq!(paths.profile, DataProfile::Production);
+    assert_eq!(paths.app_id, PRODUCTION_APP_ID);
+    assert!(paths.is_production());
+    assert!(paths.app_dir.ends_with(PRODUCTION_APP_ID));
+    assert_eq!(paths.db_path, paths.app_dir.join("blurb.db"));
+    assert_eq!(paths.covers_dir, paths.app_dir.join("covers"));
+}
+
+#[test]
+fn resolves_development_profile_from_env_value() {
+    let paths = resolve_data_paths(Some("dev"), None).unwrap();
+
+    assert_eq!(paths.profile, DataProfile::Development);
+    assert_eq!(paths.app_id, DEVELOPMENT_APP_ID);
+    assert!(!paths.is_production());
+    assert_eq!(paths.label(), "Dev");
+    assert_eq!(paths.window_title(), "Blurb (Dev)");
+    assert!(paths.app_dir.ends_with(DEVELOPMENT_APP_ID));
+    assert!(paths.log_dir.unwrap().ends_with(DEVELOPMENT_APP_ID));
+}
+
+#[test]
+fn rejects_unknown_profile_names() {
+    let err = resolve_data_paths(Some("deev"), None).unwrap_err();
+
+    assert!(err.contains("invalid BLURB_PROFILE"));
+}
+
+#[test]
+fn custom_data_dir_overrides_profile_namespace() {
+    let dir = TempDir::new().unwrap();
+    let paths = resolve_data_paths(Some("dev"), Some(dir.path().join("sandbox"))).unwrap();
+
+    assert_eq!(paths.profile, DataProfile::Custom);
+    assert!(!paths.is_production());
+    assert_eq!(paths.app_dir, dir.path().join("sandbox"));
+    assert_eq!(paths.db_path, dir.path().join("sandbox/blurb.db"));
+    assert_eq!(paths.covers_dir, dir.path().join("sandbox/covers"));
+    assert_eq!(paths.log_dir, Some(dir.path().join("sandbox/logs")));
+}
+
+#[test]
+fn init_db_at_uses_supplied_profile_path() {
+    let dir = TempDir::new().unwrap();
+    let paths = DataPaths::new(
+        DataProfile::Development,
+        DEVELOPMENT_APP_ID,
+        dir.path().join("dev-root"),
+        None,
+    );
+
+    let conn = init_db_at(&paths).unwrap();
+    let version = get_user_version(&conn).unwrap();
+
+    assert_eq!(version, crate::data::migrations::latest_version());
+    assert!(paths.db_path.exists());
+    assert!(!dir.path().join(PRODUCTION_APP_ID).exists());
+}
+
+#[test]
+fn covers_dir_for_uses_supplied_profile_path() {
+    let dir = TempDir::new().unwrap();
+    let paths = DataPaths::new(
+        DataProfile::Development,
+        DEVELOPMENT_APP_ID,
+        dir.path().join("dev-root"),
+        None,
+    );
+
+    let covers = covers_dir_for(&paths).unwrap();
+
+    assert_eq!(covers, paths.covers_dir);
+    assert!(covers.exists());
+}
