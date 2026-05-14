@@ -1162,7 +1162,6 @@ pub fn BookDetail(props: BookDetailProps) -> Element {
                 on_save: {
                     let db = db.clone();
                     move |_| {
-                        editing_diary_entry.set(None);
                         let db = db.clone();
                         spawn(async move {
                             let conn = db.conn.lock().unwrap();

@@ -372,9 +372,7 @@ pub fn App() -> Element {
                 book_id: entry.book_id,
                 book_title: Some(entry.book_title.clone()),
                 entry: Some(entry.clone()),
-                on_save: move |_| {
-                    selected_diary_entry.set(None);
-                },
+                on_save: move |_| {},
                 on_close: move |_| selected_diary_entry.set(None),
             }
         }
