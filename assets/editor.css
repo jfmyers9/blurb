@@ -1,8 +1,26 @@
 /* TipTap editor styles */
+.diary-entry-editor-pane,
+.tiptap-editor-shell {
+  min-height: 0;
+}
+
+.tiptap-editor-shell {
+  height: 100%;
+}
+
+.tiptap-editor {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .tiptap-editor .tiptap {
+  flex: 1 1 auto;
+  min-height: 100%;
   outline: none;
   padding: 0.75rem 1rem;
-  min-height: 8rem;
   color: #111827;
   font-size: 0.9375rem;
   line-height: 1.7;
