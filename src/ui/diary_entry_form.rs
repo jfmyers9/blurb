@@ -1,4 +1,7 @@
+use std::time::Duration;
+
 use dioxus::prelude::*;
+use tracing::error;
 
 use crate::data::commands::{create_diary_entry_db, update_diary_entry_db};
 use crate::data::models::DiaryEntry;
@@ -75,17 +78,23 @@ pub fn DiaryEntryForm(props: DiaryEntryFormProps) -> Element {
         .and_then(|e| e.body.clone())
         .unwrap_or_default();
     let initial_id = props.entry.as_ref().map(|e| e.id);
+    let initial_saved_snapshot = (initial_body.clone(), initial_rating, initial_date.clone());
 
     let mut entry_date = use_signal(|| initial_date);
     let mut rating: Signal<Option<i32>> = use_signal(|| initial_rating);
     let mut body = use_signal(|| initial_body);
     let mut entry_id: Signal<Option<i64>> = use_signal(|| initial_id);
+    let mut last_saved_snapshot = use_signal(|| initial_saved_snapshot);
+    let mut dirty_revision = use_signal(|| 0_u64);
+    let mut save_in_flight = use_signal(|| false);
+    let mut close_after_save = use_signal(|| false);
     let mut save_status = use_signal(|| "idle");
     let mut is_read_mode = use_signal(|| starts_in_read);
 
     let save = {
         let db = db.clone();
         let on_save = props.on_save;
+        let on_close = props.on_close;
         let book_id = props.book_id;
         move |_: ()| {
             let db = db.clone();
@@ -93,49 +102,104 @@ pub fn DiaryEntryForm(props: DiaryEntryFormProps) -> Element {
             let date_val = entry_date.read().clone();
             let rating_val = *rating.read();
             let eid = *entry_id.read();
+            let snapshot = (body_val.clone(), rating_val, date_val.clone());
+            if *last_saved_snapshot.read() == snapshot {
+                save_status.set(if eid.is_some() { "saved" } else { "idle" });
+                if *close_after_save.read() {
+                    close_after_save.set(false);
+                    on_close.call(());
+                }
+                return;
+            }
+
+            if *save_in_flight.read() {
+                save_status.set("pending");
+                return;
+            }
+
+            let revision_at_start = *dirty_revision.read();
+            save_in_flight.set(true);
             save_status.set("saving");
             spawn(async move {
-                let conn = db.conn.lock().unwrap();
-                let body_opt = if body_val.is_empty() {
-                    None
-                } else {
-                    Some(body_val.as_str())
+                let result = {
+                    let conn = db.conn.lock().unwrap();
+                    let body_opt = if body_val.is_empty() {
+                        None
+                    } else {
+                        Some(body_val.as_str())
+                    };
+                    if let Some(id) = eid {
+                        update_diary_entry_db(&conn, id, body_opt, rating_val, &date_val)
+                            .map(|_| None)
+                    } else {
+                        create_diary_entry_db(&conn, book_id, body_opt, rating_val, &date_val)
+                            .map(|created| Some(created.id))
+                    }
                 };
-                let result = if let Some(id) = eid {
-                    update_diary_entry_db(&conn, id, body_opt, rating_val, &date_val).map(|_| ())
-                } else {
-                    create_diary_entry_db(&conn, book_id, body_opt, rating_val, &date_val).map(
-                        |created| {
-                            entry_id.set(Some(created.id));
-                        },
-                    )
-                };
+
                 match result {
-                    Ok(()) => {
-                        save_status.set("saved");
+                    Ok(created_id) => {
+                        if let Some(id) = created_id {
+                            entry_id.set(Some(id));
+                        }
+                        last_saved_snapshot.set(snapshot);
+                        save_in_flight.set(false);
+                        if *dirty_revision.read() == revision_at_start {
+                            save_status.set("saved");
+                            if *close_after_save.read() {
+                                close_after_save.set(false);
+                                on_close.call(());
+                            }
+                        } else {
+                            save_status.set("pending");
+                            let next_revision = *dirty_revision.read() + 1;
+                            dirty_revision.set(next_revision);
+                        }
                         on_save.call(());
                     }
-                    Err(_) => {
-                        save_status.set("idle");
+                    Err(e) => {
+                        error!("failed to autosave diary entry: {e}");
+                        save_in_flight.set(false);
+                        save_status.set("pending");
                     }
                 }
             });
         }
     };
 
+    {
+        let save = save.clone();
+        use_effect(move || {
+            let revision = *dirty_revision.read();
+            if revision == 0 {
+                return;
+            }
+            let mut save_now = save.clone();
+            spawn(async move {
+                tokio::time::sleep(Duration::from_millis(900)).await;
+                if *dirty_revision.read() == revision {
+                    save_now(());
+                }
+            });
+        });
+    }
+
     let on_close_handler = {
         let mut save = save.clone();
         let on_close = props.on_close;
         move |_: MouseEvent| {
-            save(());
-            on_close.call(());
-        }
-    };
-
-    let save_click = {
-        let mut save = save.clone();
-        move |_: MouseEvent| {
-            save(());
+            let snapshot = (
+                body.read().clone(),
+                *rating.read(),
+                entry_date.read().clone(),
+            );
+            if !*save_in_flight.read() && *last_saved_snapshot.read() == snapshot {
+                close_after_save.set(false);
+                on_close.call(());
+            } else {
+                close_after_save.set(true);
+                save(());
+            }
         }
     };
 
@@ -218,7 +282,15 @@ pub fn DiaryEntryForm(props: DiaryEntryFormProps) -> Element {
                         input {
                             r#type: "date",
                             value: "{entry_date}",
-                            oninput: move |e| entry_date.set(e.value()),
+                            oninput: move |e| {
+                                let new_date = e.value();
+                                if entry_date.read().as_str() != new_date {
+                                    entry_date.set(new_date);
+                                    save_status.set("pending");
+                                    let next_revision = *dirty_revision.read() + 1;
+                                    dirty_revision.set(next_revision);
+                                }
+                            },
                             class: "rounded-md border border-gray-300 bg-white px-2 py-1 text-sm
                                 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100
                                 focus:ring-2 focus:ring-amber-500 focus:outline-none",
@@ -228,6 +300,9 @@ pub fn DiaryEntryForm(props: DiaryEntryFormProps) -> Element {
                             on_rate: move |score: i32| {
                                 let new_val = if Some(score) == *rating.read() { None } else { Some(score) };
                                 rating.set(new_val);
+                                save_status.set("pending");
+                                let next_revision = *dirty_revision.read() + 1;
+                                dirty_revision.set(next_revision);
                             },
                             small: true,
                         }
@@ -236,6 +311,7 @@ pub fn DiaryEntryForm(props: DiaryEntryFormProps) -> Element {
                     div {
                         class: "w-20 text-right text-sm text-gray-400",
                         match *save_status.read() {
+                            "pending" => rsx! { "Saving soon..." },
                             "saving" => rsx! { "Saving..." },
                             "saved" => rsx! {
                                 span { class: "text-green-600 dark:text-green-400", "\u{2713} Saved" }
@@ -279,20 +355,15 @@ pub fn DiaryEntryForm(props: DiaryEntryFormProps) -> Element {
                     class: "diary-entry-editor-pane flex flex-1 flex-col overflow-hidden",
                     TipTapEditor {
                         content: body.read().clone(),
-                        on_change: move |md: String| body.set(md),
+                        on_change: move |md: String| {
+                            if body.read().as_str() != md {
+                                body.set(md);
+                                save_status.set("pending");
+                                let next_revision = *dirty_revision.read() + 1;
+                                dirty_revision.set(next_revision);
+                            }
+                        },
                         editable: true,
-                    }
-                }
-
-                // Save button
-                div {
-                    class: "border-t border-gray-200 px-6 py-3 dark:border-gray-700",
-                    button {
-                        r#type: "button",
-                        onclick: save_click,
-                        class: "rounded-lg bg-amber-600 px-5 py-2 text-sm font-medium
-                            text-white transition hover:bg-amber-700 active:scale-95",
-                        "Save Entry"
                     }
                 }
             }
