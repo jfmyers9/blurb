@@ -330,6 +330,9 @@ pub fn CommandPalette(props: CommandPaletteProps) -> Element {
                     input {
                         r#type: "text",
                         value: "{query}",
+                        onmounted: move |element| async move {
+                            let _ = element.set_focus(true).await;
+                        },
                         oninput: move |e| {
                             query.set(e.value());
                             selected_index.set(0);
