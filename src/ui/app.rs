@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use dioxus::desktop::{use_global_shortcut, HotKeyState};
 use dioxus::prelude::*;
 
 use tracing::error;
@@ -47,6 +48,22 @@ pub fn App() -> Element {
     let mut show_goodreads_import = use_signal(|| false);
     let mut palette_open = use_signal(|| false);
     let mut current_view = use_signal(|| AppView::Library);
+
+    let palette_shortcut = use_global_shortcut("CmdOrCtrl+K", move |state| {
+        if state == HotKeyState::Pressed {
+            let current = *palette_open.read();
+            palette_open.set(!current);
+        }
+    });
+    let palette_shortcut_error = palette_shortcut
+        .as_ref()
+        .err()
+        .map(|err| format!("{err:?}"));
+    use_hook(move || {
+        if let Some(err) = palette_shortcut_error {
+            error!("failed to register command palette shortcut: {err}");
+        }
+    });
 
     let reload_data = {
         let db = db.clone();
@@ -98,19 +115,6 @@ pub fn App() -> Element {
 
         div {
             class: "flex min-h-screen flex-col bg-gray-50 dark:bg-gray-950",
-            // Cmd+K handler
-            onkeydown: move |e: KeyboardEvent| {
-                if e.modifiers().contains(Modifiers::META) && e.key() == Key::Character("k".to_string()) {
-                    let current = *palette_open.read();
-                    palette_open.set(!current);
-                } else if e.key() == Key::Escape {
-                    let current = *palette_open.read();
-                    if current {
-                        palette_open.set(false);
-                    }
-                }
-            },
-            tabindex: "0",
 
             // Top bar
             header {
