@@ -248,7 +248,7 @@ pub fn DiaryEntryForm(props: DiaryEntryFormProps) -> Element {
 
             if *is_read_mode.read() {
                 div {
-                    class: "flex-1 overflow-y-auto",
+                    class: "diary-entry-editor-pane flex flex-1 flex-col overflow-hidden",
                     TipTapEditor {
                         content: body.read().clone(),
                         on_change: move |_: String| {},
@@ -276,7 +276,7 @@ pub fn DiaryEntryForm(props: DiaryEntryFormProps) -> Element {
                 }
             } else {
                 div {
-                    class: "flex-1 overflow-y-auto",
+                    class: "diary-entry-editor-pane flex flex-1 flex-col overflow-hidden",
                     TipTapEditor {
                         content: body.read().clone(),
                         on_change: move |md: String| body.set(md),

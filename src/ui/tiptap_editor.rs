@@ -61,9 +61,12 @@ pub(crate) fn TipTapEditor(
     });
 
     rsx! {
-        if editable {
-            EditorToolbar { editor_id: editor_id.clone() }
+        div {
+            class: "tiptap-editor-shell flex flex-1 flex-col",
+            if editable {
+                EditorToolbar { editor_id: editor_id.clone() }
+            }
+            div { class: "tiptap-editor", id: "{editor_id}" }
         }
-        div { class: "tiptap-editor", id: "{editor_id}" }
     }
 }
